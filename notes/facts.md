@@ -36,6 +36,13 @@ Source in brackets. "Guess" marks anything not verified.
   `0f 00 seq 01 0b`. The g7ctl `gamesirapp` handshake (raw 8-byte writes with no report ID on
   EP 0x02) was not tried. It needs the interface taken from Apple's HID driver.
   [`probes/info1010.swift`]
+- On 1082 interface 0, through the HID API (Apple's HID driver in the path): the g7ctl
+  `gamesirapp` handshake as report ID 0 (`00 08 00 c1 c2 00 00 00`, with a flush packet between
+  chunks), then 10 heartbeats and info `01 09` and `01 0b` as report 0x0F. Every write returned
+  `kIOReturnSuccess`. There was no re-enumeration (still 1082 after 4 s) and no input other than
+  gamepad report 5. Success does not prove the bytes reached the wire unchanged: neither report
+  ID is declared in if0's descriptor. [`probes/handshake1082.swift`,
+  `probes/session1082-if0.swift`]
 - On Windows, Nexus sees 1010 as GIP "Xbox One Game Controller". On macOS the same PID presents
   as plain HID, so the firmware may pick its protocol from how the host enumerates it. Guess.
 - The first 1082 heartbeat probes lacked the fixed `f2 00` payload. Repeated correctly on
