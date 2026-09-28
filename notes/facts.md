@@ -38,8 +38,10 @@ Source in brackets. "Guess" marks anything not verified.
   [`probes/info1010.swift`]
 - On Windows, Nexus sees 1010 as GIP "Xbox One Game Controller". On macOS the same PID presents
   as plain HID, so the firmware may pick its protocol from how the host enumerates it. Guess.
-- The 1082 heartbeat probes sent `0f 00 01 02` without the fixed `f2 00` payload. They were
-  malformed and should be repeated before concluding that 1082 has no vendor protocol.
+- The first 1082 heartbeat probes lacked the fixed `f2 00` payload. Repeated correctly on
+  interface 1 (EP 0x04 OUT): 14 heartbeats `0f 00 seq 02 f2 00` at 0.316 s, plus info
+  `01 09` and `01 0b`, all accepted. No reply on EP 0x84 over 4 s; the only input was one idle
+  keyboard (3), consumer (2) and mouse (9) report at open. [`probes/heartbeat1082.swift`]
 - The GameSir FAQ (via gamesir-wiki) describes: Xbox+M 3 s then replug restores the original
   PID; Xbox+Share 3 s toggles XInput/GIP; Xbox+Menu 5 s does a function reset. Unverified on
   this unit.
