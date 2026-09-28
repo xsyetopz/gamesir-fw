@@ -31,7 +31,11 @@ def varint(b: bytes, i: int) -> tuple[int, int]:
 
 
 def main() -> None:
-    dll = Path(sys.argv[1] if len(sys.argv) > 1 else "private/nexus-app/HJC.GameSir.Nexus2_0.dll")
+    dll = Path(
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "private/nexus-app/HJC.GameSir.Nexus2_0.dll"
+    )
     out = Path(sys.argv[2] if len(sys.argv) > 2 else "private/firmware")
     data = dll.read_bytes()
     entries = []
@@ -39,6 +43,8 @@ def main() -> None:
         offset, i = varint(data, m.end())
         length, _ = varint(data, i)
         entries.append((m.group()[len(PREFIX) :].decode(), offset, length))
+    if not entries:
+        sys.exit(f"no {PREFIX.decode()}* resource names in {dll}")
     first = min(entries, key=lambda e: e[1])
     base = None
     for m in re.finditer(rb"[\[{]", data):
