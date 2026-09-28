@@ -1,0 +1,4 @@
+# Vendor binaries, firmware, captures and user data. Never commit or publish.
+private/
+.DS_Store
+__pycache__/
