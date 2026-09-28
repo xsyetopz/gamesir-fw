@@ -43,6 +43,11 @@ Source in brackets. "Guess" marks anything not verified.
   gamepad report 5. Success does not prove the bytes reached the wire unchanged: neither report
   ID is declared in if0's descriptor. [`probes/handshake1082.swift`,
   `probes/session1082-if0.swift`]
+- Seizing 1082 interface 0 from Apple's HID driver (`IOUSBHostInterface` with `.deviceSeize`)
+  fails at init with `0xE00002C9` (`kIOReturnInternalError`), even with OJD's client closed.
+  WindowServer and Chrome still held it open. So raw EP 0x02 writes are not reachable from an
+  app on macOS 27; that needs a USBDriverKit extension with a matching entitlement, or Linux.
+  [`probes/seize1082-if0.swift`]
 - On Windows, Nexus sees 1010 as GIP "Xbox One Game Controller". On macOS the same PID presents
   as plain HID, so the firmware may pick its protocol from how the host enumerates it. Guess.
 - The first 1082 heartbeat probes lacked the fixed `f2 00` payload. Repeated correctly on
