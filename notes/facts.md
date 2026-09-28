@@ -19,6 +19,27 @@ Source in brackets. "Guess" marks anything not verified.
   `0xE0005000`. [`probes/info.swift`]
 - These combos did nothing, and the pad stayed 1082 with its LED off: Xbox+Share 3 s,
   Xbox+M 3 s plus replug, M+Y. [owner test, 2026-09-28]
+- A reset on a borrowed Windows PC did not bring the LED back. [owner, 2026-09-28]
+- Holding View+Xbox+Menu while plugging in USB gives a fast white LED blink, and the pad
+  enumerates as `3537:1010` (bcdDevice 0x1636, USB 2.0). So the LED hardware works. [owner, ioreg]
+- In 1010 it has one HID interface (2 endpoints, Apple's HID driver owns it exclusively) with a
+  177-byte descriptor (`descriptors/g7se-1010-if0.desc`):
+  - input report 1: gamepad, 64 bytes, streams at about 250 Hz. Idle frame:
+    `01 80 80 80 80 0f 00 … ff ff ff ff 00 00 00 80 … 01 08 00 cc`;
+  - output report 5: 31 bytes, vendor 0xFF00 usage 0x22;
+  - feature 3: 47 bytes, usage 0x2721; feature 0xE0: 2 bytes, page 0xFF80 usage 0x57. A GET of
+    either stalls with `0xE0005000`;
+  - the same 0xFFF0 vendor collection as 1082's interface 1: out 0x0F, in 0x10 and 0x12.
+  [ioreg, `probes/feat1010.swift`]
+- On 1010, output report 0x0F with g7ctl framing is accepted (`kIOReturnSuccess`) but gets no
+  reply on 0x10 or 0x12: heartbeat `0f 00 seq 02 f2 00`, info `0f 00 seq 01 09` and
+  `0f 00 seq 01 0b`. The g7ctl `gamesirapp` handshake (raw 8-byte writes with no report ID on
+  EP 0x02) was not tried. It needs the interface taken from Apple's HID driver.
+  [`probes/info1010.swift`]
+- On Windows, Nexus sees 1010 as GIP "Xbox One Game Controller". On macOS the same PID presents
+  as plain HID, so the firmware may pick its protocol from how the host enumerates it. Guess.
+- The 1082 heartbeat probes sent `0f 00 01 02` without the fixed `f2 00` payload. They were
+  malformed and should be repeated before concluding that 1082 has no vendor protocol.
 - The GameSir FAQ (via gamesir-wiki) describes: Xbox+M 3 s then replug restores the original
   PID; Xbox+Share 3 s toggles XInput/GIP; Xbox+Menu 5 s does a function reset. Unverified on
   this unit.

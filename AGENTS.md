@@ -30,7 +30,7 @@ source (a file offset, a capture frame or a probe output). Mark guesses as guess
 | `nexus-localstate/` | Nexus log from the 2026-09-26 update session, plus `Settings/`. |
 | `firmware/Core/FirmwarePackages/<Model>/*.ufw` | 33 images carved by `tools/extract_nexus_resources.py`. |
 | `firmware/Core/Devices/Unsupported/unsupported_devices.json` | Nexus's list of unsupported devices and PIDs. |
-| `descriptors/` | G7 SE 1082 HID report descriptors (if0, if1) and the configuration descriptor, binary. |
+| `descriptors/` | G7 SE HID report descriptors (1082 if0 and if1, 1010 if0) and the 1082 configuration descriptor, binary. |
 | `captures/` | Windows USB capture of the G7 SE without Nexus (`pcap.py` parses it), plus macOS G7 SE input traces (`g7*.raw`, `g7*.log`). |
 | `reference/` | Copies of g7ctl's G7 Pro protocol notes and code, the GLT research notes, and gamesir-wiki's controller table. |
 | `probes/` | macOS IOUSBHost/IOHID probes used on the G7 SE (read the source before running). |
