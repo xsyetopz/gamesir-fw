@@ -1,0 +1,22 @@
+[package]
+name = "gsfw-gui"
+version = "0.1.0"
+description = "GameSir firmware decoder and flasher (GUI)"
+authors = ["gamesir-fw contributors"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+eframe = { version = "0.36.2", default-features = false, features = [
+    "glow",
+    "default_fonts",
+    "wayland",
+    "x11",
+    "accesskit",
+] }
+gsfw-core = { workspace = true }
+
+[lints]
+workspace = true
