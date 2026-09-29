@@ -2,3 +2,6 @@
 private/
 .DS_Store
 __pycache__/
+
+# Rust
+/target/
