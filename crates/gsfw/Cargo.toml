@@ -1,0 +1,15 @@
+[package]
+name = "gsfw"
+version = "0.1.0"
+description = "GameSir firmware decoder and flasher (CLI)"
+authors = ["gamesir-fw contributors"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gsfw-core = { workspace = true }
+
+[lints]
+workspace = true
