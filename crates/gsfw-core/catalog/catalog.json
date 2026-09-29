@@ -1,0 +1,212 @@
+{
+  "artifacts": [
+    {
+      "id": "g7se-6.40-flash-tool",
+      "model": "G7 SE",
+      "version": "6.40",
+      "file": "G7 SE-HE 6.40 Flash Tool - PID Protected.exe",
+      "size": 7932320,
+      "sha256": "4c7e0658c56b135c8f5e8410021c7d240be066d5340c641a2c7a02e8742a5152",
+      "urls": [],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/JS_SL3101_V640_Key.fw",
+          "sha256": "79f221efbd7dd344093bbf78c2941eeced6fe6d9bf1f6b2ae0369f52a3a176f0"
+        },
+        {
+          "path": "data/JS_SL3101_V640_No_Key.fw",
+          "sha256": "4671ff158d75650c286cd8f5c72303499b4fc28675206a3cc396e012cbde6192"
+        }
+      ]
+    },
+    {
+      "id": "g7se-6.55-flash-tool",
+      "model": "G7 SE / G7 HE",
+      "version": "6.55",
+      "file": "G7_SE-HE_6.55_Flash_Tool_-_PID_Protected.exe",
+      "size": 7851600,
+      "sha256": "dce7bde635245565c159bb470e9bf4328475ee7af173e03c0ea854b38795a9d3",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/G7_SE-HE_6.55_Flash_Tool_-_PID_Protected.exe?v=1755687300"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/JS_SL3101_V655_Key.fw",
+          "sha256": "ba2cd3ec6c7f24b18f94aab78efd06bb8e0c3e574bce8a5bd3235e03152868fa"
+        },
+        {
+          "path": "data/JS_SL3101_V655_No_Key.fw",
+          "sha256": "dc654f6ce314060d6978852ce671edca7f47d8a407cb9052a33721327f56fc58"
+        }
+      ]
+    },
+    {
+      "id": "cyclone2-3.52-flash-tool",
+      "model": "Cyclone 2",
+      "version": "3.52",
+      "file": "Cyclone_2_3.52_Flash_Tool_-_PID_Protected_1.exe",
+      "size": 8516816,
+      "sha256": "b6ec00cc2db696699d53f18c550f497d8612adc2217fc89d061480176a6e746b",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/Cyclone_2_3.52_Flash_Tool_-_PID_Protected_1.exe?v=1763445821"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/GS_C2_ADC_DEVICE_V352_Key.ufw",
+          "sha256": "00343b8a17b8e4c31bdac4ee9682886353acfe23bcb9da4eb5600ea06a1e29cb"
+        },
+        {
+          "path": "data/GS_C2_ADC_DEVICE_V352_No_Key.ufw",
+          "sha256": "faeb29e95d897bb887e9454841cdc6c1dece99e2df53637d0044030d40dcf330"
+        }
+      ]
+    },
+    {
+      "id": "cyclone2-dongle-1.21-flash-tool",
+      "model": "Cyclone 2 dongle",
+      "version": "1.21",
+      "file": "Cyclone_2_Dongle_1.21_Flash_Tool_-_PID_Protected_1.exe",
+      "size": 11341392,
+      "sha256": "b371d5a8c17499837eeeb49e973ba619f2fe8e6d05401b66bcbe132f4759cedf",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/Cyclone_2_Dongle_1.21_Flash_Tool_-_PID_Protected_1.exe?v=1763445821"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/GS_C2_Dongle_V121_Key.ufw",
+          "sha256": "da59d6e557e7fcec269d51243cd9833328919b55420b561e9b7512296049693a"
+        },
+        {
+          "path": "data/GS_C2_Dongle_V121_No_Key.ufw",
+          "sha256": "c38713cfe0a7ddfb92e5994f025c1adb36fd8ca9a864e0cbbc674277a5c9ac8a"
+        }
+      ]
+    },
+    {
+      "id": "cyclone2-dongle-1.19-flash-tool",
+      "model": "Cyclone 2 dongle",
+      "version": "1.19",
+      "file": "Cyclone_2_Dongle_1.19_Flash_Tool_-_PID_Protected.exe",
+      "size": 11174192,
+      "sha256": "065455ce64ed87766a5eab2dfdd0032fb041a73648b122f9b333a522f0a6f577",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/Cyclone_2_Dongle_1.19_Flash_Tool_-_PID_Protected.exe?v=1753782733"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/GS_C2_Dongle_V119_Key.ufw",
+          "sha256": "4e144e481b72976f17918c737b1c3768998ff1918f00c822dca70797f15c9a8b"
+        },
+        {
+          "path": "data/GS_C2_Dongle_V119_No_Key.ufw",
+          "sha256": "9d4da25aa55e57c97fc8437bfd0a3612bbd606a6748bd7306ee664a210d46f62"
+        }
+      ]
+    },
+    {
+      "id": "k1-flux-1.26-flash-tool",
+      "model": "K1 Flux",
+      "version": "1.26",
+      "file": "K1_Flux_1.26_Flash_Tool_-_PID_Protected.exe",
+      "size": 8032752,
+      "sha256": "7ca20a9144905caa89664b619f24c76c61dde354da73866e81056a4e6de7dfd5",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/K1_Flux_1.26_Flash_Tool_-_PID_Protected.exe?v=1760173200"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/JS_K1_FLUX_V126_Key.fw",
+          "sha256": "c7dbace166e0a9ba5112d9e13eb11094f4b00a2455a3168fd0ed7db27b471c11"
+        },
+        {
+          "path": "data/JS_K1_FLUX_V126_No_Key.fw",
+          "sha256": "cc4f9402acf2afe5fafa8e1b6003e26f954222afb0cdbac6e86ede1669c340d6"
+        }
+      ]
+    },
+    {
+      "id": "cyclone-pro-dongle-231101a-flash-tool",
+      "model": "Cyclone Pro dongle",
+      "version": "231101a",
+      "file": "GameSir_Dongle_231101a_Cyclone_Pro.exe",
+      "size": 7699280,
+      "sha256": "9af629be83c9171e8b75a005e8bd05f39fdc99dc11d60de79584ce6e8851428e",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/GameSir_Dongle_231101a_Cyclone_Pro.exe?v=1756280724"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/Alante_GDF-G760308_EA4B_V10_231101a.fw",
+          "sha256": "d7a34a3e29f6f19bc535f36b36b66141e85e1181abe3d255459f1ef2b33fde69"
+        }
+      ]
+    },
+    {
+      "id": "universal-dongle-250319a-flash-tool",
+      "model": "GameSir dongle (universal)",
+      "version": "250319a",
+      "file": "GameSir_Dongle_250319a_Universal_Flash_Tool.exe",
+      "size": 7739824,
+      "sha256": "6287463bd94dd7eaebcaf3f78f5fe31d07074be11b8710db5047983e521115aa",
+      "urls": [
+        "https://cdn.shopify.com/s/files/1/2241/8433/files/GameSir_Dongle_250319a_Universal_Flash_Tool.exe?v=1756280724"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/Alante_GDF-G760402_25AA_V10_250319a.fw",
+          "sha256": "71aa12587ee2b091c0bd02c74b7c82d1d18a3d7186b72deb569df58eb235925c"
+        }
+      ]
+    },
+    {
+      "id": "tarantula-pro-dongle-240930a-flash-tool",
+      "model": "Tarantula Pro dongle",
+      "version": "240930a",
+      "file": "Customer_GDF-G760402_CA4D_V10_240930a.exe",
+      "size": 8940712,
+      "sha256": "d97c93f7669137d66bdcaaf7a1d1e0b2a8a99aa325461761f992526b735b55de",
+      "urls": [
+        "https://download.gamesir.hk/Customer_GDF-G760402_CA4D_V10_240930a.exe"
+      ],
+      "mirror_urls": [],
+      "images": [
+        {
+          "path": "data/Alante_GDF-G760402_5B0F_V10_240921a.fw",
+          "sha256": "01f094e831984c7891f77192c19c6eeb04d452bfa25b8463c1f5c98975051d7d"
+        },
+        {
+          "path": "data/Alante_GDF-G760402_66BE_V10_240910a.fw",
+          "sha256": "7f9f4560061b2108f52dde90a4947a4de25b20cfd615ee0faacc5aa812491cdd"
+        },
+        {
+          "path": "data/Alante_GDF-G760402_759A_V10_240926a.fw",
+          "sha256": "051e80a1534178d317c885a16abdac51a16eb61439139421421da88ffd2e1d71"
+        },
+        {
+          "path": "data/Alante_GDF-G760402_7D5E_V10_240821a.fw",
+          "sha256": "69744bb523920ac61d9a8fe123500cf5218b4c2ab615a331877a30325296fc8d"
+        },
+        {
+          "path": "data/Alante_GDF-G760402_C233_V10_240925a.fw",
+          "sha256": "c4a425822e2620f4d7806587fd25cb4deb06f623487fee36f4b9970111e4cb2f"
+        },
+        {
+          "path": "data/Alante_GDF-G760402_D181_V10_240829a.fw",
+          "sha256": "e4532986ebc3a68d8572d39d6728b8a4f809f6aa54ffd669585ad430f1e2e444"
+        },
+        {
+          "path": "data/Alante__GDF-G760402_CA4D_V10_240930a.fw",
+          "sha256": "795bd2af8fa777ba09792e216d2247b59634f2931ba523f6a65a114f11623e85"
+        }
+      ]
+    }
+  ]
+}
