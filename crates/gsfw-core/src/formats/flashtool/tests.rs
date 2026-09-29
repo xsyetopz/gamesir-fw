@@ -137,7 +137,7 @@ fn an_entry_past_the_archive_end_is_refused() {
 
 #[test]
 fn the_first_four_archive_bytes_can_have_any_value() {
-    // The nine Flash Tools in `notes/facts.md` have nine different values here.
+    // Nine examined Flash Tools have nine different values here.
     let mut data = archive("data\\x", CHECK_CRC, 9);
     data[..4].copy_from_slice(&[0x5b, 0x56, 0x5b, 0x74]);
     assert_eq!(entries(&data).unwrap().len(), 1, "one entry");
@@ -177,7 +177,7 @@ fn a_file_that_is_not_pe_has_no_overlay() {
 fn the_stream_is_found_after_any_prefix() {
     let data = archive("data\\x", CHECK_CRC, 9);
     let len = u32::try_from(data.len()).unwrap();
-    // Lengths of the prefixes in the nine Flash Tools of `notes/facts.md` include 0, 1 and 14.
+    // In nine examined Flash Tools, the prefix lengths include 0, 1 and 14.
     let prefixes: [&[u8]; 3] = [
         &[],
         &[0xf8],

@@ -1,26 +1,19 @@
-//! The flash use case against a simulated G7 SE after the Nexus 6.64 update (C1 reports
-//! `flash3.bin`'s head, mode 2, eoffset 1), writing the 6.40 image. Needs the images under
-//! `private/`; skips without them.
+//! The flash use case against a simulated pad (C1 reports mode 2 and EOFFSET 1), writing an
+//! image that the test builds: a `flash.bin` whose directory matches the pad's.
 #![cfg(test)]
-
-#[path = "common/fixture.rs"]
-pub mod fixture;
-
-use fixture::fixture;
 
 use core::time::Duration;
 use gsfw_core::app::{DeviceError, GipLink, device_crc, flash, open_session};
-use gsfw_core::formats::crc16;
-use gsfw_core::formats::ufw::{Ufw, load};
-use gsfw_core::jieli::{KILL_LEN, TOOL_ID, build, find_key, plan_flash, tag_of, unscramble};
+use gsfw_core::formats::ufw::{Entry, Format, Ufw};
+use gsfw_core::formats::{crc16, enc};
+use gsfw_core::jieli::{
+    FLASH_HEAD_KEY, HEAD_LEN, KILL_LEN, TOOL_ID, build, parse_flash_head, plan_flash, tag_of,
+    unscramble,
+};
 
-/// The key the real pad scrambles its C0 reply with (`jlgip-c0-reply1.bin`).
+/// The key the pad scrambles its C0 reply with. It is not the host's key.
 const PAD_C0_KEY: u16 = 0x5A5A;
 const DEV_RAND: [u8; 16] = *b"0123456789abcdef";
-
-fn entry(image: &Ufw, name: &str) -> Vec<u8> {
-    image.raw(image.entry(name).unwrap()).to_vec()
-}
 
 fn u32_at(data: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(data[at..][..4].try_into().unwrap())
@@ -56,6 +49,8 @@ struct Pad {
     calls: usize,
     /// The running bank's head has changed.
     killed: bool,
+    /// The CRC of the complete region C.
+    c_crc: u16,
 }
 
 impl Pad {
@@ -69,6 +64,7 @@ impl Pad {
             link: Link::Up,
             calls: 0,
             killed: false,
+            c_crc: crc16(&region_c()),
         }
     }
 
@@ -158,7 +154,7 @@ impl Pad {
             let region_c = &self.flash[C_ADDR..][..C_LEN];
             assert_eq!(
                 crc16(region_c),
-                C_CRC,
+                self.c_crc,
                 "the running bank's head changed before region C was complete"
             );
             self.killed = true;
@@ -223,42 +219,108 @@ impl Pad {
     }
 }
 
-fn images() -> Option<(Ufw, Vec<u8>)> {
-    let image = load(&fixture("flash-tool/bundle/JS_SL3101_V640_Key.fw")?).unwrap();
-    let nexus = load(&fixture(
-        "firmware/Core/FirmwarePackages/G7SE/JS_SL3101_V664_Key.ufw",
-    )?)
-    .unwrap();
-    Some((image, entry(&nexus, "flash3.bin")))
+/// The directory addresses in the image and in the pad head. EOFFSET 1 moves them by 0x1000.
+const DIR_HEAD: u32 = 0x2000;
+const DIR_HEAD2: u32 = 0x3_E000;
+/// Mode 2: region C goes to the moved `app_dir_head`, the zero bytes to the moved
+/// `app_dir_head2`.
+const C_ADDR: usize = 0x3000;
+const KILL_ADDR: usize = 0x3_F000;
+/// Two 4 KiB sectors, 32 C4 writes.
+const C_LEN: usize = 0x2000;
+/// Header byte 13: an erase unit of 0x1000.
+const UNIT_BYTE: u8 = 0x10;
+
+/// The region C bytes of the image: no byte is 0xFF or the pad's 0x55.
+fn region_c() -> Vec<u8> {
+    (0..C_LEN)
+        .map(|i| [0x12, 0x34, 0xA0, 0x0F][i % 4])
+        .collect()
+}
+
+/// A flash head: a 32-byte header with its CRC, the size and the erase unit, then the two
+/// directory entries and erased records. Each 32-byte record is ENC-scrambled on its own.
+fn flash_head() -> Vec<u8> {
+    let mut plain = vec![0xFF; HEAD_LEN];
+    plain[..32].fill(0);
+    plain[8..12].copy_from_slice(&0x4_0000_u32.to_le_bytes());
+    plain[13] = UNIT_BYTE;
+    let crc = crc16(&plain[2..32]);
+    plain[..2].copy_from_slice(&crc.to_le_bytes());
+    for (at, name, addr) in [
+        (32, "app_dir_head", DIR_HEAD),
+        (64, "app_dir_head2", DIR_HEAD2),
+    ] {
+        let record = &mut plain[at..][..32];
+        record.fill(0);
+        record[8..12].copy_from_slice(&addr.to_le_bytes());
+        record[16..][..name.len()].copy_from_slice(name.as_bytes());
+    }
+    plain
+        .chunks(32)
+        .flat_map(|r| enc(r, FLASH_HEAD_KEY))
+        .collect()
+}
+
+/// `flash.bin`: the head, filler up to `app_dir_head`, then region C.
+fn flash_bin() -> Vec<u8> {
+    let mut bin = flash_head();
+    bin.resize(index(DIR_HEAD), 0x77);
+    bin.extend(region_c());
+    bin
+}
+
+/// An image with one `flash.bin` entry and a chip key for C1.
+fn image() -> Ufw {
+    let data = flash_bin();
+    let size = u32::try_from(data.len()).unwrap();
+    Ufw {
+        format: Format::Fw,
+        hdr_key: 0x1234,
+        hdr_crc: 0,
+        list_crc: 0,
+        size,
+        count: 1,
+        f0a: 0,
+        f0c: 0,
+        chip: "AC695X".to_owned(),
+        hdr_ok: true,
+        list_ok: true,
+        entries: vec![Entry {
+            kind: 0,
+            index: 0,
+            crc: crc16(&data),
+            offset: 0,
+            size,
+            padded: size,
+            name: "flash.bin".to_owned(),
+        }],
+        chipkey: Some(0x1234),
+        data,
+    }
+}
+
+fn images() -> (Ufw, Vec<u8>) {
+    (image(), flash_head())
 }
 
 #[test]
-fn flash_640_over_664() {
-    let Some((image, head)) = images() else {
-        return;
-    };
+fn flash_writes_region_c_then_kills_the_running_head() {
+    let (image, head) = images();
     let mut pad = Pad::new(&head);
     let mut lines = Vec::new();
     let mut log = |line: &str| lines.push(line.to_owned());
     let mut s = open_session(&mut pad, &image, &mut log, None, &[7; 16]).unwrap();
     flash(&mut s, true, true).unwrap();
     drop(s);
-    let plan = {
-        let bin = entry(&image, "flash.bin");
-        let dev = gsfw_core::jieli::parse_flash_head(&head[..0x100], 2, 1).unwrap();
-        plan_flash(&bin, &dev).unwrap()
-    };
+    let plan = plan_flash(&flash_bin(), &parse_flash_head(&head, 2, 1).unwrap()).unwrap();
     assert_eq!(
         (plan.c_addr, plan.kill_addr),
         (0x3000, 0x3_F000),
         "bank 1, kill bank 2"
     );
     let c = index(plan.c_addr);
-    assert_eq!(
-        pad.flash[c..][..plan.region_c.len()],
-        plan.region_c,
-        "region C written"
-    );
+    assert_eq!(pad.flash[c..][..C_LEN], region_c(), "region C written");
     let k = index(plan.kill_addr);
     assert_eq!(
         pad.flash[k..][..KILL_LEN],
@@ -284,9 +346,7 @@ fn flash_640_over_664() {
 
 #[test]
 fn region_a_mismatch_stops_before_writing() {
-    let Some((image, head)) = images() else {
-        return;
-    };
+    let (image, head) = images();
     let mut pad = Pad::new(&head);
     let mut log = |_: &str| {};
     let mut s = open_session(&mut pad, &image, &mut log, None, &[7; 16]).unwrap();
@@ -298,9 +358,7 @@ fn region_a_mismatch_stops_before_writing() {
 
 #[test]
 fn checks_only_writes_nothing() {
-    let Some((image, head)) = images() else {
-        return;
-    };
+    let (image, head) = images();
     let mut pad = Pad::new(&head);
     let mut log = |_: &str| {};
     let mut s = open_session(&mut pad, &image, &mut log, None, &[7; 16]).unwrap();
@@ -316,9 +374,7 @@ fn checks_only_writes_nothing() {
 
 #[test]
 fn failed_verify_stops_after_5_tries() {
-    let Some((image, head)) = images() else {
-        return;
-    };
+    let (image, head) = images();
     let mut pad = Pad::new(&head);
     pad.ignore_writes = true;
     let mut log = |_: &str| {};
@@ -332,42 +388,13 @@ fn failed_verify_stops_after_5_tries() {
     );
 }
 
-#[test]
-fn captured_c0_reply() {
-    let Some(path) = fixture("captures/jlgip-c0-reply1.bin") else {
-        return;
-    };
-    let pkt = std::fs::read(path).unwrap();
-    assert_eq!(
-        find_key(&pkt),
-        Some(PAD_C0_KEY),
-        "the pad picks its own key"
-    );
-    let plain = unscramble(&pkt, PAD_C0_KEY).unwrap();
-    assert_eq!(u32_at(&plain, 0x10), 1, "handshake reply");
-    assert_eq!(&plain[0x18..0x1C], b"HJX1", "SDK id");
-    assert!(
-        gsfw_core::jieli::session_key(&[0; 16], &plain).is_ok(),
-        "session key"
-    );
-}
-
-/// The recorded 6.40 flash (`notes/facts.md`, "Flashed 6.40 back"): region C at 0x3000,
-/// 0x2d000 bytes, CRC 0xd820; the running bank's head at 0x3f000.
-const C_ADDR: usize = 0x3000;
-const C_LEN: usize = 0x2_D000;
-const C_CRC: u16 = 0xd820;
-const KILL_ADDR: usize = 0x3_F000;
-
 /// Q1 (`ARCHITECTURE.md`): a link drop during a writing flash. [`Pad::guard`] checks
 /// the pad at every packet of every flash in this file, so the pad state after a drop at any
-/// call is covered by `flash_640_over_664`. This test checks that the host reports the drop:
+/// call is covered by `flash_writes_region_c_then_kills_the_running_head`. This test checks that the host reports the drop:
 /// at drop points spread over the whole flash, both before and after the pad acts.
 #[test]
 fn a_link_drop_is_reported() {
-    let Some((image, head)) = images() else {
-        return;
-    };
+    let (image, head) = images();
     let mut log = |_: &str| {};
     let mut pad = Pad::new(&head);
     let mut s = open_session(&mut pad, &image, &mut log, None, &[7; 16]).unwrap();

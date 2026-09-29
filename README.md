@@ -54,6 +54,5 @@ The pad commands need the pad in Xbox (GIP) mode. On Windows, bind its GIP inter
 - `crates/gsfw/`: the command line. `crates/gsfw-gui/`: the window (egui).
 - `ARCHITECTURE.md`: the components, their layers and the design decisions.
 - `docs/`: the upgrade protocol.
-- `notes/`: research notes, with the source of each verified fact.
 - `justfile`: the gate. Run `just check` before a change is done. It formats, then runs clippy, the tests, the docs, a release build, `tools/check_no_firmware.py` and cargo-deny.
 - `tools/check_no_firmware.py`: fails when git would commit a firmware image or a file over 1 MB.

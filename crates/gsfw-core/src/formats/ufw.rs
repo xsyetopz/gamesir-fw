@@ -1,6 +1,4 @@
-//! `JieLi` AC695X `.ufw` upgrade images (layout: `notes/facts.md`, "`JL_Upgrade_Gip.dll` firmware
-//! loader") and download-tool `.fw` images (`notes/facts.md`, "v6.40 .fw format and
-//! descriptors").
+//! `JieLi` AC695X `.ufw` upgrade images and download-tool `.fw` images.
 //!
 //! - Header and entry table are scrambled with the ENC keystream, key 0xFFFF.
 //! - Entry bodies (except flash images) use the SFC cipher with the chip key: 32-byte blocks,

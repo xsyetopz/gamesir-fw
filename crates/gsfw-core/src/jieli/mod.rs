@@ -1,7 +1,6 @@
 //! `JieLi` GIP upgrade protocol (`JL_Upgrade_Gip.dll`), pure logic, no USB.
 //!
-//! Sources: RVAs into `JL_Upgrade_Gip.dll` (decompile in `private/re/gip-upgrade/all.c`) and
-//! `private/re/gip-upgrade/findings.md`. A command is a 512-byte JSUD packet, ENC-scrambled with
+//! Source: the code of `JL_Upgrade_Gip.dll`. A command is a 512-byte JSUD packet, ENC-scrambled with
 //! the session key, cut into ten `4A 0A idx len data[52]` fragments. Each fragment goes out as a
 //! GIP vendor message 0x0F whose payload is `F0 00 00 00` + the 56-byte fragment (Nexus
 //! `SendToDevice`). Replies come back as `F1 ?? ?? ??` + `4A total idx len data`.

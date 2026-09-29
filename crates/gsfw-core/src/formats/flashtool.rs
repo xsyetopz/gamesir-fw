@@ -1,5 +1,4 @@
-//! Carve the files out of a `GameSir` "Flash Tool" `.exe` (layout: `notes/facts.md`, "Flash Tool
-//! overlay").
+//! Carve the files out of a `GameSir` "Flash Tool" `.exe`.
 //!
 //! - The overlay starts at the end of the last PE section's raw data.
 //! - The overlay is a prefix, then Qt `qCompress` data: the archive length (`u32`, big-endian)

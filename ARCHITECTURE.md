@@ -26,7 +26,6 @@ gamesir-firmware/                  # repository root
 │   ├── gsfw/                      # CLI binary: hand-written argument parser to an Op
 │   └── gsfw-gui/                  # egui window: a form to an Op, and the write confirmation
 ├── docs/                          # user docs: the JieLi GIP upgrade protocol and the recovery
-├── notes/                         # research notes; facts.md holds verified facts with sources
 ├── tools/
 │   └── check_no_firmware.py       # fails on a firmware image or a file over 1 MB in the tree
 ├── .github/workflows/check.yml    # CI on Linux, macOS and Windows
@@ -39,8 +38,8 @@ gamesir-firmware/                  # repository root
 └── ARCHITECTURE.md                # this document
 ```
 
-`private/` is gitignored. It holds vendor binaries, firmware, captures and probes on the owner's
-machine and is never published.
+Vendor binaries, firmware images and captures are never in the repository. `.gitignore` and
+`tools/check_no_firmware.py` keep them out.
 
 ## 2. High-Level System Diagram
 
@@ -201,20 +200,19 @@ cargo run -q -p gsfw -- --help
 
 `just check` formats, then runs clippy, the tests, the docs, a release build,
 `tools/check_no_firmware.py` and `cargo-deny`. `just lint` is the fast lane during edits, and is
-not acceptance. Tests that
-need the G7 SE images from `private/` skip when the images are not there.
+not acceptance. The tests need no firmware image: the simulator tests build their image in
+the test.
 
 ### Quality scenarios
 
 | # | Scenario | Measure | Check |
 | --- | --- | --- | --- |
 | Q1 | The USB link drops at any packet during `flash`. | The pad keeps one bank with an intact dir head: the old bank until region C is verified, the new one after. | Pad simulator in `crates/gsfw-core/tests/sim_flash.rs`: a guard checks the pad before each C3 and C4. `a_link_drop_is_reported` drops the link at spaced points and at the last calls, and expects an error each time. |
-| Q2 | The image's layout, chip key or region A does not fit the pad. | No C3 or C4 packet is sent. | `region_a_mismatch_stops_before_writing`, `plan_rejects_other_layout`, and the `plan` unit tests. |
+| Q2 | The image's layout, chip key or region A does not fit the pad. | No C3 or C4 packet is sent. | `region_a_mismatch_stops_before_writing`, and the `plan` unit tests (`rejections_in_order`). |
 | Q3 | A downloaded or given artifact differs from the catalog. | It is never written or used. | `a_tampered_download_is_never_used`, `a_given_file_is_checked_and_no_url_is_asked`, `each_image_must_have_its_catalog_sha256`. |
 | Q4 | Someone adds a firmware image to the repository. | CI fails. | `tools/check_no_firmware.py`: files that git tracks or does not ignore, `*.ufw`, `*.fw`, `*.bin`, or over 1 MB. |
 | Q5 | The same core runs on macOS, Linux and Windows. | The unit and simulator tests pass on all three. | The CI matrix. Not run yet: no remote. |
-| Q6 | A known-good recovery is repeated. | The plan equals the recorded G7 SE run: region C at 0x3000, 0x2d000 bytes, CRC 0xd820, head zeroed at 0x3f000. | `flash_640_over_664` and `plan_640_into_bank1`. They skip without the local images. |
-| Q7 | A new model is added. | Only a catalog entry and a test change, unless the protocol differs. | Review. `the_builtin_catalog_is_valid` checks the built-in catalog. |
+| Q6 | A new model is added. | Only a catalog entry and a test change, unless the protocol differs. | Review. `the_builtin_catalog_is_valid` checks the built-in catalog. |
 
 ### Invariants
 
@@ -262,8 +260,8 @@ Documented plans (owner, in the earlier version of this document and in `AGENTS.
 Risks:
 
 - A pad must enumerate with the GIP interface. On macOS, 6.64 came up only as HID `1082`, so the
-  first recovery needed Windows. On 6.40, `gsfw probe` and `gsfw crc` worked on macOS
-  (`notes/facts.md`). Nobody ran `flash` on macOS or Linux.
+  first recovery needed Windows. On 6.40, `gsfw probe` and `gsfw crc` worked on macOS.
+  Nobody ran `flash` on macOS or Linux.
 - Only the G7 SE is proven. Models with other erase units or EOFFSET 0x10 use plan paths that no
   live run has checked.
 - C1 needs the chip key of the `_Key` image. No pad that needs `_No_Key` has been seen.
