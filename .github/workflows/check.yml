@@ -1,0 +1,37 @@
+name: rust-policy
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.98.1
+          components: clippy,rustfmt
+      # Q4: no firmware image and no file over 1 MB in the repository.
+      - run: python tools/check_no_firmware.py
+      # The dependency checks do not depend on the OS, so only Linux installs cargo-deny and
+      # runs the full gate. macOS and Windows run the host lane: clippy, tests, docs, build.
+      - if: runner.os == 'Linux'
+        run: rustup run 1.98.1 cargo install cargo-deny --locked --version 0.20.2
+      - if: runner.os == 'Linux'
+        run: python tools/check.py
+      - if: runner.os != 'Linux'
+        run: python tools/check.py host
