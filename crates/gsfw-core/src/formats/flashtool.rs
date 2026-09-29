@@ -23,6 +23,35 @@ pub const HEADER_LEN: usize = 0x20;
 /// Length of one record of the file table.
 pub const RECORD_LEN: usize = 0x210;
 
+/// PE format (Microsoft PE/COFF specification): the DOS header offset of the PE header
+/// offset, and the PE header offsets of the section count and the optional header length.
+const E_LFANEW_AT: usize = 0x3C;
+const SECTION_COUNT_AT: usize = 6;
+const OPTIONAL_LEN_AT: usize = 20;
+/// Length of the PE signature and the COFF file header, before the optional header.
+const PE_HEADER_LEN: usize = 24;
+/// Length of one section header, and its offsets of the raw data size and pointer.
+const SECTION_LEN: usize = 40;
+const RAW_SIZE_AT: usize = 16;
+const RAW_POINTER_AT: usize = 20;
+
+/// zlib header (RFC 1950, section 2.2): CMF for deflate with a 32 KiB window, the FDICT flag,
+/// and the divisor of the FCHECK test.
+const ZLIB_CMF: u8 = 0x78;
+const ZLIB_FDICT: u8 = 0x20;
+const ZLIB_CHECK: u16 = 31;
+/// Length of the big-endian archive length before the zlib stream.
+const DECLARED_LEN: usize = 4;
+
+/// Archive header offsets of the record count and the archive length.
+const COUNT_AT: usize = 4;
+const TOTAL_AT: usize = 8;
+/// Record offsets of the CRC, the offset, the size and the name.
+const CRC_AT: usize = 2;
+const OFFSET_AT: usize = 4;
+const SIZE_AT: usize = 8;
+const NAME_AT: usize = 0x10;
+
 fn invalid(message: &str) -> FormatError {
     FormatError::Invalid(message.to_owned())
 }
@@ -49,20 +78,20 @@ pub fn overlay(exe: &[u8]) -> Result<&[u8], FormatError> {
     if !exe.starts_with(b"MZ") {
         return Err(not_pe());
     }
-    let pe = index(u32_at(exe, 0x3c).ok_or_else(not_pe)?);
+    let pe = index(u32_at(exe, E_LFANEW_AT).ok_or_else(not_pe)?);
     if !tail(exe, pe).starts_with(b"PE\0\0") {
         return Err(not_pe());
     }
-    let sections = u16_at(exe, pe.saturating_add(6)).ok_or_else(not_pe)?;
-    let optional_len = u16_at(exe, pe.saturating_add(20)).ok_or_else(not_pe)?;
+    let sections = u16_at(exe, pe.saturating_add(SECTION_COUNT_AT)).ok_or_else(not_pe)?;
+    let optional_len = u16_at(exe, pe.saturating_add(OPTIONAL_LEN_AT)).ok_or_else(not_pe)?;
     let table = pe
-        .saturating_add(24)
+        .saturating_add(PE_HEADER_LEN)
         .saturating_add(usize::from(optional_len));
     let mut end = 0;
     for n in 0..usize::from(sections) {
-        let record = table.saturating_add(n.saturating_mul(40));
-        let size = u32_at(exe, record.saturating_add(16)).ok_or_else(not_pe)?;
-        let start = u32_at(exe, record.saturating_add(20)).ok_or_else(not_pe)?;
+        let record = table.saturating_add(n.saturating_mul(SECTION_LEN));
+        let size = u32_at(exe, record.saturating_add(RAW_SIZE_AT)).ok_or_else(not_pe)?;
+        let start = u32_at(exe, record.saturating_add(RAW_POINTER_AT)).ok_or_else(not_pe)?;
         end = end.max(index(start).saturating_add(index(size)));
     }
     match exe.get(end..) {
@@ -75,7 +104,7 @@ pub fn overlay(exe: &[u8]) -> Result<&[u8], FormatError> {
 /// and no preset dictionary.
 const fn zlib_header(pair: [u8; 2]) -> bool {
     let [cmf, flg] = pair;
-    cmf == 0x78 && flg & 0x20 == 0 && u16::from_be_bytes(pair).is_multiple_of(31)
+    cmf == ZLIB_CMF && flg & ZLIB_FDICT == 0 && u16::from_be_bytes(pair).is_multiple_of(ZLIB_CHECK)
 }
 
 /// The archive in the zlib stream at the start of `stream`, when it is `declared` bytes long.
@@ -106,7 +135,7 @@ fn inflate_at(stream: &[u8], declared: u32) -> Result<Vec<u8>, FormatError> {
 /// message is the failure of the last stream.
 pub fn inflate(overlay: &[u8]) -> Result<Vec<u8>, FormatError> {
     let mut failure = invalid("the overlay has no zlib stream");
-    for (at, head) in overlay.windows(6).enumerate() {
+    for (at, head) in overlay.windows(DECLARED_LEN + 2).enumerate() {
         let [a, b, c, d, cmf, flg] = *head else {
             continue;
         };
@@ -114,7 +143,7 @@ pub fn inflate(overlay: &[u8]) -> Result<Vec<u8>, FormatError> {
             continue;
         }
         let declared = u32::from_be_bytes([a, b, c, d]);
-        match inflate_at(tail(overlay, at.saturating_add(4)), declared) {
+        match inflate_at(tail(overlay, at.saturating_add(DECLARED_LEN)), declared) {
             Ok(archive) => return Ok(archive),
             Err(err) => failure = err,
         }
@@ -132,8 +161,8 @@ pub fn inflate(overlay: &[u8]) -> Result<Vec<u8>, FormatError> {
 /// are not the CRC-32 or the Adler-32 of the archive.
 pub fn entries(archive: &[u8]) -> Result<Vec<Entry>, FormatError> {
     let truncated = || invalid("the archive table is truncated");
-    let count = u32_at(archive, 4).ok_or_else(truncated)?;
-    let total = u32_at(archive, 8).ok_or_else(truncated)?;
+    let count = u32_at(archive, COUNT_AT).ok_or_else(truncated)?;
+    let total = u32_at(archive, TOTAL_AT).ok_or_else(truncated)?;
     if index(total) != archive.len() {
         return Err(FormatError::Invalid(format!(
             "the archive is {} bytes, its header says {total}",
@@ -148,10 +177,10 @@ pub fn entries(archive: &[u8]) -> Result<Vec<Entry>, FormatError> {
             return Err(truncated());
         }
         let entry = Entry {
-            crc: u16_at(record, 2).ok_or_else(truncated)?,
-            offset: u32_at(record, 4).ok_or_else(truncated)?,
-            size: u32_at(record, 8).ok_or_else(truncated)?,
-            name: ascii_name(tail(record, 0x10)),
+            crc: u16_at(record, CRC_AT).ok_or_else(truncated)?,
+            offset: u32_at(record, OFFSET_AT).ok_or_else(truncated)?,
+            size: u32_at(record, SIZE_AT).ok_or_else(truncated)?,
+            name: ascii_name(tail(record, NAME_AT)),
         };
         let body = window(archive, index(entry.offset), index(entry.size));
         if body.len() != index(entry.size) {

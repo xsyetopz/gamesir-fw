@@ -8,21 +8,24 @@ use core::time::Duration;
 use std::time::Instant;
 
 use nusb::descriptors::TransferType;
-use nusb::transfer::{Buffer, In, Interrupt, Out};
+use nusb::transfer::{Buffer, Direction, In, Interrupt, Out};
 use nusb::{Device, Endpoint, Interface, MaybeFuture as _};
 
 use crate::app::{DeviceError, GipLink};
 use crate::bytes::hex;
 use crate::jieli::{
-    GIP_POWER_ON, Reassembler, fragments, gip_unwrap, gip_wrap, is_ack, reply_fragment,
+    GIP_NEEDS_ACK, GIP_POWER_ON, Reassembler, fragments, gip_ack, gip_unwrap, gip_wrap, is_ack,
+    reply_fragment,
 };
 
 /// `GameSir`'s USB vendor id.
 pub const VID: u16 = 0x3537;
 /// Class, subclass and protocol of an Xbox GIP interface.
 pub const GIP_CLASS: (u8, u8, u8) = (0xFF, 0x47, 0xD0);
-/// GIP header flag: the sender wants an acknowledgement.
-const NEEDS_ACK: u8 = 0x10;
+/// How long the pad may send messages after the power-on message.
+const POWER_ON_WAIT: Duration = Duration::from_millis(500);
+/// Sends of one fragment before [`GipLink::send`] stops. The DLL resends without a limit.
+const SEND_TRIES: usize = 5;
 const POLL: Duration = Duration::from_millis(100);
 const ACK_WAIT: Duration = Duration::from_secs(1);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -149,11 +152,11 @@ fn find_gip(pid: Option<u16>) -> Result<(Device, u8, u8, u8), DeviceError> {
                 }
                 let out = alt
                     .endpoints()
-                    .find(|ep| ep.address() & 0x80 == 0)?
+                    .find(|ep| ep.direction() == Direction::Out)?
                     .address();
                 let inp = alt
                     .endpoints()
-                    .find(|ep| ep.address() & 0x80 != 0)?
+                    .find(|ep| ep.direction() == Direction::In)?
                     .address();
                 Some((alt.interface_number(), out, inp))
             })
@@ -220,7 +223,7 @@ impl UsbGipLink {
         };
         if power_on {
             link.write(&GIP_POWER_ON)?;
-            link.drain(Duration::from_millis(500))?;
+            link.drain(POWER_ON_WAIT)?;
         }
         Ok(link)
     }
@@ -259,26 +262,10 @@ impl UsbGipLink {
         let msg = done.buffer.to_vec();
         self.trace(" <", &msg);
         if let Some((cmd, flags, seq, payload)) = gip_unwrap(&msg)
-            && flags & NEEDS_ACK != 0
+            && flags & GIP_NEEDS_ACK != 0
         {
-            // Layout from xpad; a guess for this pad.
             let len = u8::try_from(payload.len()).unwrap_or(u8::MAX);
-            let ack = [
-                0x01,
-                0x20,
-                seq,
-                0x09,
-                0x00,
-                cmd,
-                flags & !NEEDS_ACK,
-                len,
-                0,
-                0,
-                0,
-                0,
-                0,
-            ];
-            self.write(&ack)?;
+            self.write(&gip_ack(cmd, flags, seq, len))?;
         }
         Ok(Some(msg))
     }
@@ -319,9 +306,9 @@ impl GipLink for UsbGipLink {
         for frag in fragments(pkt) {
             let idx = frag.get(2).copied().unwrap_or_default();
             let mut acked = false;
-            // The DLL resends without a limit; stop after 5 here.
-            for _ in 0..5 {
-                self.seq = self.seq.wrapping_rem(255).wrapping_add(1);
+            for _ in 0..SEND_TRIES {
+                // The sequence runs 1..=255, then starts at 1 again.
+                self.seq = self.seq.checked_add(1).unwrap_or(1);
                 self.write(&gip_wrap(&frag, self.seq, self.flags))?;
                 if self.acked(idx)? {
                     acked = true;

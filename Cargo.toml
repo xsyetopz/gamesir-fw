@@ -10,12 +10,6 @@ license = "Unlicense"
 [workspace.dependencies]
 gsfw-core = { path = "crates/gsfw-core", default-features = false }
 
-[workspace.metadata.rust-policy]
-portable-packages = []
-cargo-deny-version = "0.20.2"
-project-profile = "egui"
-profile-packages = ["gsfw-gui"]
-
 [workspace.lints.rust]
 warnings = { level = "forbid", priority = -100 }
 future_incompatible = { level = "forbid", priority = -90 }

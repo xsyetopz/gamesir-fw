@@ -60,9 +60,13 @@ pub fn good_exe(name: &str) -> Vec<u8> {
     exe(&[0xf8], &archive, u32::try_from(archive.len()).unwrap())
 }
 
-/// A fresh directory for one test; `carve` writes below it.
-fn scratch(test: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("gsfw-flashtool-{test}-{}", std::process::id()));
+/// A fresh, empty directory for the test called `test`.
+///
+/// # Panics
+/// When the directory cannot be removed or made.
+#[must_use]
+pub fn scratch(test: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("gsfw-{test}-{}", std::process::id()));
     if dir.exists() {
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -72,7 +76,7 @@ fn scratch(test: &str) -> PathBuf {
 
 #[test]
 fn carve_writes_each_file_under_its_stored_path() {
-    let dir = scratch("carve");
+    let dir = scratch("flashtool-carve");
     fs::write(dir.join("tool.exe"), good_exe("data\\config.ini")).unwrap();
 
     let written = carve(&dir.join("tool.exe"), &dir.join("out")).unwrap();
@@ -85,7 +89,7 @@ fn carve_writes_each_file_under_its_stored_path() {
 
 #[test]
 fn a_crc_mismatch_writes_nothing() {
-    let dir = scratch("crc");
+    let dir = scratch("flashtool-crc");
     let archive = archive("data\\config.ini", CHECK_CRC ^ 1, 9);
     let tool = exe(&[0xf8], &archive, u32::try_from(archive.len()).unwrap());
     fs::write(dir.join("tool.exe"), tool).unwrap();
@@ -99,7 +103,7 @@ fn a_crc_mismatch_writes_nothing() {
 
 #[test]
 fn a_name_that_leaves_the_output_directory_writes_nothing() {
-    let dir = scratch("traversal");
+    let dir = scratch("flashtool-traversal");
     fs::write(dir.join("tool.exe"), good_exe("..\\evil.ini")).unwrap();
 
     let result = carve(&dir.join("tool.exe"), &dir.join("out"));

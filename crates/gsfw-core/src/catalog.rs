@@ -138,6 +138,9 @@ fn texts(value: &Value, key: &str, owner: &str) -> Result<Vec<String>, FormatErr
         .collect()
 }
 
+/// Hex digits in a SHA-256 sum.
+const SHA256_HEX_LEN: usize = 64;
+
 /// # Errors
 /// [`FormatError::Invalid`] when `sha256` is not 64 lowercase hex digits.
 fn sha256(value: &Value, owner: &str) -> Result<String, FormatError> {
@@ -145,7 +148,7 @@ fn sha256(value: &Value, owner: &str) -> Result<String, FormatError> {
     let hex = sum
         .bytes()
         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    if sum.len() != 64 || !hex {
+    if sum.len() != SHA256_HEX_LEN || !hex {
         return Err(invalid(&format!(
             "{owner}: `sha256` is not 64 lowercase hex digits"
         )));

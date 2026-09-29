@@ -1,10 +1,9 @@
 use std::fs;
-use std::path::PathBuf;
 
 use super::{Source, check_images, fetch, obtain, sha256_hex};
 use crate::catalog::Artifact;
 use crate::catalog::Image;
-use crate::formats::flashtool::tests::{BODY, good_exe};
+use crate::formats::flashtool::tests::{BODY, good_exe, scratch};
 
 /// SHA-256 of `abc` (FIPS 180-2, appendix B.1).
 const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -48,16 +47,6 @@ fn artifact() -> Artifact {
     }
 }
 
-/// A fresh directory for one test.
-fn scratch(test: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("gsfw-fetch-{test}-{}", std::process::id()));
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
 #[test]
 fn sha256_matches_the_standard_vector() {
     assert_eq!(sha256_hex(b"abc"), ABC);
@@ -96,7 +85,7 @@ fn the_mirror_is_asked_when_no_publisher_url_gives_the_file() {
 
 #[test]
 fn a_tampered_download_is_never_used() {
-    let dir = scratch("tampered");
+    let dir = scratch("fetch-tampered");
     let mut source = table(vec![
         ("https://p/1", Ok(b"abd")),
         ("https://p/2", Ok(b"ab")),
@@ -118,7 +107,7 @@ fn a_tampered_download_is_never_used() {
 
 #[test]
 fn a_given_file_is_checked_and_no_url_is_asked() {
-    let dir = scratch("from");
+    let dir = scratch("fetch-from");
     fs::write(dir.join("abc.exe"), b"abd").unwrap();
     let mut source = table(vec![("https://p/1", Ok(b"abc"))]);
 
@@ -152,7 +141,7 @@ fn an_artifact_without_urls_needs_a_file() {
 
 #[test]
 fn each_image_must_have_its_catalog_sha256() {
-    let dir = scratch("images");
+    let dir = scratch("fetch-images");
     fs::create_dir_all(dir.join("data")).unwrap();
     let with_image = Artifact {
         images: vec![Image {
@@ -173,7 +162,7 @@ fn each_image_must_have_its_catalog_sha256() {
 
 #[test]
 fn fetch_writes_the_artifact_and_its_files_and_checks_the_images() {
-    let dir = scratch("carve");
+    let dir = scratch("fetch-carve");
     let exe = good_exe("data\\x.fw");
     fs::write(dir.join("tool.exe"), &exe).unwrap();
     let with_image = |sum: &str| Artifact {

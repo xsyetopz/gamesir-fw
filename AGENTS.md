@@ -17,32 +17,33 @@ source (a file offset, a capture frame or a probe output). Mark guesses as guess
 - Standalone Swift probes build with
   `env -u TOOLCHAINS DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer xcrun swiftc -O x.swift -o x`.
 - The tool is the Rust workspace in `crates/` (`gsfw-core`, the `gsfw` CLI, the `gsfw-gui`
-  window). `python3 tools/check.py` is the gate; it must pass. All lints are `forbid`: fix the
+  window). `just check` is the gate; it must pass. All lints are `forbid`: fix the
   code, never add `#[allow]`. `lib.rs`, `main.rs` and `mod.rs` hold only declarations; unit tests
   go in `<module>/tests.rs`. A new operation goes into `gsfw_core::ops` so the CLI and the GUI
   offer it both.
-- Code comments, doc comments, and user-facing docs (`README.md`, `docs/`) follow ASD-STE100.
+- Code comments, doc comments, and user-facing docs (`README.md`, `ARCHITECTURE.md`, `docs/`) follow ASD-STE100.
 - `CLAUDE.md` and `GEMINI.md` are symlinks to this file. Edit `AGENTS.md`.
 
 ## Commands
 
-Run from the repository root. `tools/check.py` selects the pinned toolchain (1.98.1) itself.
-The full gate also needs `cargo-deny` 0.20.2 on `PATH`.
+Run from the repository root. `rust-toolchain.toml` pins Rust 1.98.1. `just check` also needs
+`cargo-deny` 0.20.2 on `PATH`.
 
 | Command | What |
 | --- | --- |
-| `python3 tools/check.py setup-rust` | Install the pinned toolchain. |
-| `cargo fmt --all` | Format. The gate fails on a format diff. |
-| `python3 tools/check.py quick` | Fast lane during edits. Not acceptance. |
-| `python3 tools/check.py` | Full gate: policy, clippy (also the test lane), tests, docs, build, cargo-deny. |
-| `python3 tools/check_no_firmware.py` | No firmware image and no file over 1 MB in the tree (CI runs it). |
+| `just setup` | Install the pinned toolchain. |
+| `just fmt` | Format. The gate fails on a format diff. |
+| `just lint` | Clippy on the code, then on the tests with `.clippy-test/clippy.toml`. Fast lane during edits. |
+| `just host` | Format check, clippy, tests, docs, release build. |
+| `just check` | Format, then `host`, `no-firmware` and cargo-deny: the full gate. |
+| `just no-firmware` | No firmware image and no file over 1 MB in the tree (CI runs it). |
 | `cargo run -p gsfw -- --help` | CLI commands. `list`, `probe`, `crc` and `flash` touch a pad. |
 | `cargo run -p gsfw-gui` | The window. |
 
-The `justfile` wraps these commands (`just --list`). `just check` formats, then runs the full gate.
+The `justfile` holds the cargo commands of each recipe (`just --list`).
 
-Done means `cargo fmt --all` and `python3 tools/check.py` pass. CI (`.github/workflows/check.yml`)
-runs the full gate on Linux and the `host` lane on macOS and Windows.
+Done means `just check` passes. CI (`.github/workflows/check.yml`) runs the same cargo
+commands: all of them on Linux, all except cargo-deny on macOS and Windows.
 
 ## Layout
 
@@ -52,7 +53,8 @@ runs the full gate on Linux and the `host` lane on macOS and Windows.
 | `crates/gsfw-core/src/jieli/`, `src/usb.rs` | GIP upgrade protocol, and its nusb link. |
 | `crates/gsfw-core/src/app/`, `src/ops` | Use cases (fetch, session, flash) and the operations the CLI and GUI share. |
 | `crates/gsfw-core/catalog/catalog.json` | Downloads that `fetch` knows, with SHA-256 sums. No firmware bytes. |
-| `docs/` | User-facing docs (architecture, GIP protocol). |
+| `ARCHITECTURE.md` | Components, layers, invariant commands, decisions. |
+| `docs/` | User-facing docs (GIP protocol, recovery). |
 | `notes/` | Research notes. `facts.md` holds verified facts. |
 
 ## `private/` layout

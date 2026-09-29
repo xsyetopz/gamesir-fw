@@ -13,8 +13,10 @@ pub const ACK_CMD: u8 = 0x4C;
 pub const FRAG_TOTAL: u8 = 10;
 /// Data bytes per fragment.
 pub const FRAG_DATA: usize = 0x34;
+/// Fragment header length: `4A total idx len`.
+const FRAG_HEAD: usize = 4;
 /// Fragment length, 56: what `JL_handleGipData` (0x2120) reads from each message.
-pub const FRAG_LEN: usize = 4 + FRAG_DATA;
+pub const FRAG_LEN: usize = FRAG_HEAD + FRAG_DATA;
 /// Nexus `SendToDevice` prefix: 0x3C bytes = prefix + fragment.
 pub const OUT_PREFIX: [u8; 4] = [0xF0, 0x00, 0x00, 0x00];
 /// First payload byte of a vendor reply.
@@ -25,6 +27,18 @@ pub const GIP_VENDOR_CMD: u8 = 0x0F;
 pub const GIP_FLAGS: u8 = 0x00;
 /// Linux xpad `xboxone_power_on`.
 pub const GIP_POWER_ON: [u8; 5] = [0x05, 0x20, 0x00, 0x01, 0x00];
+/// GIP header flag: the sender wants an acknowledgement.
+pub const GIP_NEEDS_ACK: u8 = 0x10;
+/// GIP acknowledgement message id (xpad `GIP_CMD_ACK`).
+const GIP_ACK_CMD: u8 = 0x01;
+/// GIP header flag of a message that the GIP layer makes itself (xpad `GIP_OPT_INTERNAL`).
+const GIP_INTERNAL: u8 = 0x20;
+/// Payload length of a GIP acknowledgement.
+const GIP_ACK_LEN: u8 = 0x09;
+/// Length bit that tells that a second length byte follows.
+const LEN_CONTINUES: u8 = 0x80;
+/// Length of the vendor reply prefix before the fragment: [`REPLY_MARK`] and three bytes.
+const REPLY_PREFIX_LEN: usize = 4;
 
 /// Ten 56-byte `4A 0A idx len data` fragments of `pkt`, idx 1..=10, len 0x34 (0x2c for the
 /// last of a 512-byte packet), data zero-padded.
@@ -37,7 +51,7 @@ pub fn fragments(pkt: &[u8]) -> Vec<[u8; FRAG_LEN]> {
             let len = u8::try_from(chunk.len()).unwrap_or(u8::MAX);
             let mut frag = [0; FRAG_LEN];
             put(&mut frag, 0, &[FRAG_CMD, FRAG_TOTAL, idx, len]);
-            put(&mut frag, 4, chunk);
+            put(&mut frag, FRAG_HEAD, chunk);
             frag
         })
         .collect()
@@ -104,17 +118,38 @@ pub fn gip_unwrap(msg: &[u8]) -> Option<(u8, u8, u8, &[u8])> {
     let &[cmd, flags, seq, len, ref rest @ ..] = msg else {
         return None;
     };
-    if len & 0x80 != 0 {
+    if len & LEN_CONTINUES != 0 {
         return None;
     }
     Some((cmd, flags, seq, window(rest, 0, usize::from(len))))
 }
 
+/// The acknowledgement of GIP message `cmd` with `flags`, `seq` and a `len`-byte payload.
+/// The layout is from xpad and is a guess for this pad.
+#[must_use]
+pub const fn gip_ack(cmd: u8, flags: u8, seq: u8, len: u8) -> [u8; 13] {
+    [
+        GIP_ACK_CMD,
+        GIP_INTERNAL,
+        seq,
+        GIP_ACK_LEN,
+        0x00,
+        cmd,
+        flags & !GIP_NEEDS_ACK,
+        len,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+}
+
 /// The 56-byte fragment inside a vendor reply payload `F1 ?? ?? ??` + fragment.
 #[must_use]
 pub fn reply_fragment(payload: &[u8]) -> Option<&[u8]> {
-    (payload.len() >= 8 && payload.first() == Some(&REPLY_MARK))
-        .then(|| window(payload, 4, FRAG_LEN))
+    (payload.len() >= REPLY_PREFIX_LEN + FRAG_HEAD && payload.first() == Some(&REPLY_MARK))
+        .then(|| window(payload, REPLY_PREFIX_LEN, FRAG_LEN))
 }
 
 #[cfg(test)]

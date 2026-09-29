@@ -3,9 +3,12 @@
 //! `private/`; skips without them.
 #![cfg(test)]
 
-use core::time::Duration;
-use std::path::{Path, PathBuf};
+#[path = "common/fixture.rs"]
+pub mod fixture;
 
+use fixture::fixture;
+
+use core::time::Duration;
 use gsfw_core::app::{DeviceError, GipLink, device_crc, flash, open_session};
 use gsfw_core::formats::crc16;
 use gsfw_core::formats::ufw::{Ufw, load};
@@ -15,21 +18,8 @@ use gsfw_core::jieli::{KILL_LEN, TOOL_ID, build, find_key, plan_flash, tag_of, u
 const PAD_C0_KEY: u16 = 0x5A5A;
 const DEV_RAND: [u8; 16] = *b"0123456789abcdef";
 
-fn fixture(rel: &str) -> Option<PathBuf> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../private")
-        .join(rel);
-    if path.exists() {
-        Some(path)
-    } else {
-        eprintln!("skipped: {} is missing", path.display());
-        None
-    }
-}
-
 fn entry(image: &Ufw, name: &str) -> Vec<u8> {
-    let e = image.entries.iter().find(|e| e.name == name).unwrap();
-    image.raw(e).to_vec()
+    image.raw(image.entry(name).unwrap()).to_vec()
 }
 
 fn u32_at(data: &[u8], at: usize) -> u32 {
@@ -144,7 +134,7 @@ impl GipLink for Pad {
 }
 
 impl Pad {
-    /// Q1 (`docs/architecture.md`): checks a C3 or C4 of `len` bytes at `addr` before the pad
+    /// Q1 (`ARCHITECTURE.md`): checks a C3 or C4 of `len` bytes at `addr` before the pad
     /// acts on it. A link drop stops every later packet, so the flash after any drop is a
     /// flash this check has passed: the pad keeps one bootable bank.
     ///
@@ -369,7 +359,7 @@ const C_LEN: usize = 0x2_D000;
 const C_CRC: u16 = 0xd820;
 const KILL_ADDR: usize = 0x3_F000;
 
-/// Q1 (`docs/architecture.md`): a link drop during a writing flash. [`Pad::guard`] checks
+/// Q1 (`ARCHITECTURE.md`): a link drop during a writing flash. [`Pad::guard`] checks
 /// the pad at every packet of every flash in this file, so the pad state after a drop at any
 /// call is covered by `flash_640_over_664`. This test checks that the host reports the drop:
 /// at drop points spread over the whole flash, both before and after the pad acts.

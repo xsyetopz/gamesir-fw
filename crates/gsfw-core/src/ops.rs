@@ -13,8 +13,8 @@ use crate::bytes::hex;
 use crate::catalog;
 use crate::formats::{FormatError, crc16, flashtool, nexus, ufw};
 use crate::jieli::{
-    GIP_FLAGS, ProtocolError, TOOL_ID, build, c0_handshake, c1_query, fragments, gip_wrap,
-    parse_flash_head,
+    GIP_FLAGS, HEAD_LEN, ProtocolError, RAND_LEN, TOOL_ID, build, c0_handshake, c1_query,
+    fragments, gip_wrap, parse_flash_head,
 };
 use crate::net::HttpSource;
 use crate::usb::{UsbGipLink, list_devices};
@@ -339,7 +339,7 @@ fn info(path: &Path, sink: &Sink) -> Result<bool, OpError> {
     for entry in &image.entries {
         if is_flash_bin(&entry.name) {
             let raw = image.raw(entry);
-            let head = parse_flash_head(raw.get(..0x100).unwrap_or(raw), 0, 0)?;
+            let head = parse_flash_head(raw.get(..HEAD_LEN).unwrap_or(raw), 0, 0)?;
             sink(&format!(
                 "{} head: crc ok {}, flash size {:#x}",
                 entry.name, head.header_ok, head.size
@@ -362,6 +362,9 @@ fn load_image(path: &Path) -> Result<ufw::Ufw, OpError> {
     Ok(image)
 }
 
+/// A fixed packet tag, so that each dry run shows the same bytes.
+const DRY_RUN_TAG: u32 = 0x1234_5678;
+
 /// # Errors
 /// [`OpError`] when the image has no chip key.
 fn dry_run(path: &Path, sink: &Sink) -> Result<bool, OpError> {
@@ -369,7 +372,7 @@ fn dry_run(path: &Path, sink: &Sink) -> Result<bool, OpError> {
     let chipkey = image
         .chipkey
         .ok_or_else(|| DeviceError::Pad("image has no chip key; C1 needs it".to_owned()))?;
-    let host_rand: [u8; 16] = core::array::from_fn(|i| u8::try_from(i).unwrap_or_default());
+    let host_rand: [u8; RAND_LEN] = core::array::from_fn(|i| u8::try_from(i).unwrap_or_default());
     let packets = [
         ("C0 handshake", c0_handshake(&host_rand)),
         (
@@ -379,7 +382,7 @@ fn dry_run(path: &Path, sink: &Sink) -> Result<bool, OpError> {
     ];
     for (label, body) in packets {
         sink(&format!("# {label}"));
-        for frag in fragments(&build(&body, TOOL_ID, Some(0x1234_5678))?) {
+        for frag in fragments(&build(&body, TOOL_ID, Some(DRY_RUN_TAG))?) {
             sink(&hex(&gip_wrap(&frag, 1, GIP_FLAGS), " "));
         }
     }
@@ -404,7 +407,7 @@ fn pad(path: &Path, action: &PadAction, opts: &LinkOptions, sink: &Sink) -> Resu
         PadAction::Crc { addr, len } => {
             let crc = device_crc(&mut s, addr, len)?;
             (s.log)(&format!("C5 {addr:#x}+{len:#x}: crc {crc:#06x}"));
-            if let Some(entry) = image.entries.iter().find(|e| e.name == "flash.bin") {
+            if let Some(entry) = image.entry("flash.bin") {
                 let raw = image.raw(entry);
                 let from = crate::bytes::index(addr);
                 let want = crate::bytes::index(len);

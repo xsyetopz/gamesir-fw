@@ -9,8 +9,24 @@ use crate::formats::{crc16, enc};
 /// ENC key of the device flash header and its directory entries (0x12690 decode).
 pub const FLASH_HEAD_KEY: u16 = 0xFFFF;
 
-/// Bytes the header must hold: [`FlashHead::size`] at 8 and the erase unit byte at 13.
-const HEADER_MIN: usize = 14;
+/// Length of the flash head: the header, then the directory entries.
+pub const HEAD_LEN: usize = 0x100;
+/// The value of an erased flash byte.
+pub const ERASED: u8 = 0xFF;
+/// Length of the header and of each directory entry.
+const RECORD_LEN: usize = 32;
+/// Header and entry offset of the `u32` address or size.
+const ADDR_AT: usize = 8;
+/// Header offset of the erase unit byte.
+const UNIT_AT: usize = 13;
+/// Bytes the header must hold: [`FlashHead::size`] and the erase unit byte.
+const HEADER_MIN: usize = UNIT_AT + 1;
+/// Header offset of the CRC, and the offset of the bytes it covers.
+const CRC_AT: usize = 0;
+const CRC_COVERS: usize = 2;
+/// Entry offset and length of the NUL-terminated name.
+const NAME_AT: usize = 16;
+const NAME_LEN: usize = 16;
 
 /// One flash directory entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,7 +71,7 @@ impl FlashHead {
 
     /// The erase unit byte (header byte 13); the device unit is this `<< 8`.
     pub(super) fn unit_byte(&self) -> u8 {
-        self.header.get(13).copied().unwrap_or_default()
+        self.header.get(UNIT_AT).copied().unwrap_or_default()
     }
 
     /// `app_dir_head` and `app_dir_head2`, moved by the EOFFSET shift (none for an unknown
@@ -74,31 +90,32 @@ impl FlashHead {
 /// # Errors
 /// [`ProtocolError::BadPacket`] when `head` is too short for the header fields.
 pub fn parse_flash_head(head: &[u8], mode: u8, eoffset: u8) -> Result<FlashHead, ProtocolError> {
-    let header = enc(window(head, 0, 32), FLASH_HEAD_KEY);
+    let header = enc(window(head, 0, RECORD_LEN), FLASH_HEAD_KEY);
     if header.len() < HEADER_MIN {
         return Err(ProtocolError::BadPacket(format!(
             "flash head {} bytes, need {HEADER_MIN}",
             head.len()
         )));
     }
-    let entries = (32..0x100)
-        .step_by(32)
+    let entries = (RECORD_LEN..HEAD_LEN)
+        .step_by(RECORD_LEN)
         .filter_map(|at| {
-            let raw = enc(window(head, at, 32), FLASH_HEAD_KEY);
-            let name = window(&raw, 16, 16).split(|&b| b == 0).next()?;
-            if name.is_empty() || name.iter().all(|&b| b == 0xFF) || !name.is_ascii() {
+            let raw = enc(window(head, at, RECORD_LEN), FLASH_HEAD_KEY);
+            let name = window(&raw, NAME_AT, NAME_LEN).split(|&b| b == 0).next()?;
+            if name.is_empty() || name.iter().all(|&b| b == ERASED) || !name.is_ascii() {
                 return None;
             }
             Some(DirEntry {
                 name: name.iter().copied().map(char::from).collect(),
-                addr: u32_at(&raw, 8)?,
+                addr: u32_at(&raw, ADDR_AT)?,
                 raw,
             })
         })
         .collect();
     Ok(FlashHead {
-        header_ok: u16_at(&header, 0) == Some(crc16(window(&header, 2, 30))),
-        size: u32_at(&header, 8).unwrap_or_default(),
+        header_ok: u16_at(&header, CRC_AT)
+            == Some(crc16(window(&header, CRC_COVERS, RECORD_LEN - CRC_COVERS))),
+        size: u32_at(&header, ADDR_AT).unwrap_or_default(),
         header,
         entries,
         mode,

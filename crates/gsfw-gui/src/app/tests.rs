@@ -26,12 +26,11 @@ fn only_a_writing_flash_asks() {
 }
 
 #[test]
-fn confirmation_names_image_and_pad() {
-    let text = confirm_text(&flash(true, Some(0x1010)));
-    assert!(
-        text.starts_with("Write x.fw to the pad with PID 1010?"),
-        "{text}"
-    );
+fn confirmation_names_the_image_and_the_target() {
+    let one = confirm_text(&flash(true, Some(0x1010)));
+    assert!(one.contains("x.fw"), "image: {one}");
+    assert!(one.contains("1010"), "product ID: {one}");
     let any = confirm_text(&flash(true, None));
-    assert!(any.contains("the first GameSir pad in GIP mode"), "{any}");
+    assert!(any.contains("x.fw"), "image: {any}");
+    assert!(!any.contains("1010"), "no product ID: {any}");
 }

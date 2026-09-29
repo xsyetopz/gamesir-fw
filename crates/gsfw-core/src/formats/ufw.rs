@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::FormatError;
-use super::cipher::{ENC_DEFAULT_KEY, crc16, enc, sfc};
+use super::cipher::{ENC_DEFAULT_KEY, SFC_OFFSET_SHIFT, crc16, enc, sfc};
 use crate::bytes::{ascii_name, find, index, low16, tail, u16_at, u32_at, window};
 
 /// Length of the container header.
@@ -28,6 +28,45 @@ pub const FLASH_TYPES: [u16; 6] = [0x00, 0x20, 0x21, 0x22, 0x23, 0x24];
 pub const ISD_CONFIG_TYPE: u16 = 0x34;
 /// The first 32 plaintext bytes of every `isd_config.ini`.
 pub const ISD_PLAINTEXT_HEAD: [u8; 32] = [b'#'; 32];
+/// Entry type of the flash image that holds `app.bin`.
+const APP_FLASH_TYPE: u16 = 0x00;
+
+/// Header offsets: the CRCs, the image size, the entry count, two unknown fields, the chip name.
+const HDR_CRC_AT: usize = 0;
+const LIST_CRC_AT: usize = 2;
+const SIZE_AT: usize = 4;
+const COUNT_AT: usize = 8;
+const F0A_AT: usize = 10;
+const F0C_AT: usize = 12;
+const CHIP_AT: usize = 0x10;
+const CHIP_LEN: usize = HEADER_LEN - CHIP_AT;
+/// The header CRC covers the header from this offset.
+const HDR_CRC_COVERS: usize = LIST_CRC_AT;
+
+/// Entry-record offsets.
+const KIND_AT: usize = 0;
+const INDEX_AT: usize = 2;
+const ENTRY_CRC_AT: usize = 4;
+const OFFSET_AT: usize = 8;
+const ENTRY_SIZE_AT: usize = 12;
+const PADDED_AT: usize = 16;
+const NAME_AT: usize = 0x40;
+const NAME_LEN: usize = ENTRY_LEN - NAME_AT;
+
+/// JLFS entry length and offsets.
+const JLFS_LEN: usize = 32;
+const JLFS_HDR_CRC_AT: usize = 0;
+const JLFS_CRC_AT: usize = 2;
+const JLFS_OFFSET_AT: usize = 4;
+const JLFS_SIZE_AT: usize = 8;
+const JLFS_ATTR_AT: usize = 12;
+const JLFS_INDEX_AT: usize = 14;
+const JLFS_NAME_AT: usize = 16;
+const JLFS_NAME_LEN: usize = JLFS_LEN - JLFS_NAME_AT;
+/// The JLFS entry CRC covers the entry from this offset.
+const JLFS_CRC_COVERS: usize = JLFS_CRC_AT;
+/// Offset of the top JLFS table in the flash image.
+const TOP_TABLE_AT: usize = 0x20;
 
 fn short(what: &str, len: usize) -> FormatError {
     FormatError::Invalid(format!("{what} of {len} bytes is too short"))
@@ -62,13 +101,13 @@ impl Entry {
         let field16 = |at| u16_at(&plain, at).ok_or_else(|| short("entry", raw.len()));
         let field32 = |at| u32_at(&plain, at).ok_or_else(|| short("entry", raw.len()));
         Ok(Self {
-            kind: field16(0)?,
-            index: field16(2)?,
-            crc: field16(4)?,
-            offset: field32(8)?,
-            size: field32(12)?,
-            padded: field32(16)?,
-            name: ascii_name(window(&plain, 0x40, 0x10)),
+            kind: field16(KIND_AT)?,
+            index: field16(INDEX_AT)?,
+            crc: field16(ENTRY_CRC_AT)?,
+            offset: field32(OFFSET_AT)?,
+            size: field32(ENTRY_SIZE_AT)?,
+            padded: field32(PADDED_AT)?,
+            name: ascii_name(window(&plain, NAME_AT, NAME_LEN)),
         })
     }
 }
@@ -146,10 +185,11 @@ impl Ufw {
         let head = enc(window(&data, 0, HEADER_LEN), hdr_key);
         let field16 = |at| u16_at(&head, at).ok_or_else(|| short("header", head.len()));
         let field32 = |at| u32_at(&head, at).ok_or_else(|| short("header", head.len()));
-        let (hdr_crc, list_crc, size) = (field16(0)?, field16(2)?, field32(4)?);
-        let (count, f0a, f0c) = (field16(8)?, field16(10)?, field32(12)?);
-        let chip = ascii_name(window(&head, 0x10, 0x30));
-        let hdr_ok = crc16(tail(&head, 2)) == hdr_crc;
+        let hdr_crc = field16(HDR_CRC_AT)?;
+        let (list_crc, size) = (field16(LIST_CRC_AT)?, field32(SIZE_AT)?);
+        let (count, f0a, f0c) = (field16(COUNT_AT)?, field16(F0A_AT)?, field32(F0C_AT)?);
+        let chip = ascii_name(window(&head, CHIP_AT, CHIP_LEN));
+        let hdr_ok = crc16(tail(&head, HDR_CRC_COVERS)) == hdr_crc;
         let table = window(
             &data,
             HEADER_LEN,
@@ -178,6 +218,12 @@ impl Ufw {
         })
     }
 
+    /// The first entry called `name`.
+    #[must_use]
+    pub fn entry(&self, name: &str) -> Option<&Entry> {
+        self.entries.iter().find(|e| e.name == name)
+    }
+
     /// The stored bytes of `entry`, clamped to the file.
     #[must_use]
     pub fn raw(&self, entry: &Entry) -> &[u8] {
@@ -188,12 +234,12 @@ impl Ufw {
         let isd = self
             .entries
             .iter()
-            .find(|e| e.kind == ISD_CONFIG_TYPE && e.size >= 32)?;
-        let first = window(self.raw(isd), 0, 32);
+            .find(|e| e.kind == ISD_CONFIG_TYPE && index(e.size) >= ISD_PLAINTEXT_HEAD.len())?;
+        let first = window(self.raw(isd), 0, ISD_PLAINTEXT_HEAD.len());
         // Block 0's key is chipkey ^ (offset >> 2).
         (0..=u16::MAX)
             .find(|&k| enc(first, k) == ISD_PLAINTEXT_HEAD)
-            .map(|k| k ^ low16(index(isd.offset).wrapping_shr(2)))
+            .map(|k| k ^ low16(index(isd.offset).wrapping_shr(SFC_OFFSET_SHIFT)))
     }
 
     /// The body of `entry` in plaintext. `.ufw`: stored bytes for flash images (decrypted on the
@@ -231,13 +277,13 @@ impl Ufw {
 /// [`FormatError::Invalid`] when the file is shorter than 8 bytes or no key fits.
 pub fn find_header_key(data: &[u8]) -> Result<u16, FormatError> {
     for key in core::iter::once(ENC_DEFAULT_KEY).chain(0..ENC_DEFAULT_KEY) {
-        let size =
-            u32_at(&enc(window(data, 0, 8), key), 4).ok_or_else(|| short("file", data.len()))?;
+        let size = u32_at(&enc(window(data, 0, SIZE_AT + 4), key), SIZE_AT)
+            .ok_or_else(|| short("file", data.len()))?;
         if index(size) != data.len() {
             continue;
         }
         let head = enc(window(data, 0, HEADER_LEN), key);
-        if u16_at(&head, 0) == Some(crc16(tail(&head, 2))) {
+        if u16_at(&head, HDR_CRC_AT) == Some(crc16(tail(&head, HDR_CRC_COVERS))) {
             return Ok(key);
         }
     }
@@ -288,16 +334,16 @@ impl JlfsEntry {
     /// Reads a descrambled 32-byte entry; `None` when `plain` is shorter than 16 bytes.
     #[must_use]
     pub fn parse(plain: &[u8]) -> Option<Self> {
-        let hdr_crc = u16_at(plain, 0)?;
+        let hdr_crc = u16_at(plain, JLFS_HDR_CRC_AT)?;
         Some(Self {
             hdr_crc,
-            crc: u16_at(plain, 2)?,
-            offset: u32_at(plain, 4)?,
-            size: u32_at(plain, 8)?,
-            attr: *plain.get(12)?,
-            index: u16_at(plain, 14)?,
-            name: ascii_name(window(plain, 16, 16)),
-            ok: crc16(window(plain, 2, 30)) == hdr_crc,
+            crc: u16_at(plain, JLFS_CRC_AT)?,
+            offset: u32_at(plain, JLFS_OFFSET_AT)?,
+            size: u32_at(plain, JLFS_SIZE_AT)?,
+            attr: *plain.get(JLFS_ATTR_AT)?,
+            index: u16_at(plain, JLFS_INDEX_AT)?,
+            name: ascii_name(window(plain, JLFS_NAME_AT, JLFS_NAME_LEN)),
+            ok: crc16(window(plain, JLFS_CRC_COVERS, JLFS_LEN - JLFS_CRC_COVERS)) == hdr_crc,
         })
     }
 }
@@ -309,9 +355,9 @@ pub fn jlfs_list(
     start: usize,
     decode: impl Fn(&[u8], usize) -> Vec<u8>,
 ) -> Vec<JlfsEntry> {
-    (start..image.len().saturating_sub(31))
-        .step_by(32)
-        .map_while(|off| JlfsEntry::parse(&decode(window(image, off, 32), off)))
+    (start..image.len().saturating_sub(JLFS_LEN - 1))
+        .step_by(JLFS_LEN)
+        .map_while(|off| JlfsEntry::parse(&decode(window(image, off, JLFS_LEN), off)))
         .take_while(|e| e.ok)
         .collect()
 }
@@ -327,11 +373,11 @@ pub fn app_bin(image: &Ufw) -> Result<Vec<u8>, FormatError> {
     let flash_entry = image
         .entries
         .iter()
-        .find(|e| e.kind == 0)
+        .find(|e| e.kind == APP_FLASH_TYPE)
         .ok_or_else(|| missing("flash image entry (type 0)"))?;
     let key = image.chipkey.ok_or_else(|| missing("chip key"))?;
     let flash = image.raw(flash_entry);
-    let top = jlfs_list(flash, 0x20, |b, _| enc(b, ENC_DEFAULT_KEY));
+    let top = jlfs_list(flash, TOP_TABLE_AT, |b, _| enc(b, ENC_DEFAULT_KEY));
     let base = top
         .iter()
         .find(|e| e.name == "app_dir_head")

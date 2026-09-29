@@ -15,6 +15,23 @@ pub const TOOL_ID: u16 = 0x1011;
 /// SDK id (.data 0x1d054).
 pub const SDK_ID: [u8; 4] = *b"HJX1";
 
+/// Offset of the header CRC (`u16`). It covers the bytes from [`VERSION_AT`] to [`BODY_AT`].
+const HEAD_CRC_AT: usize = 4;
+/// Offset of the version (`u16`).
+const VERSION_AT: usize = 6;
+/// The only version that the pad and the DLL use.
+const VERSION: u16 = 1;
+/// Offset of the body CRC (`u16`).
+const BODY_CRC_AT: usize = 8;
+/// Offset of the body length (`u16`).
+const BODY_LEN_AT: usize = 10;
+/// Offset of the tag (`u32`). The reply echoes it.
+const TAG_AT: usize = 12;
+/// Offset of the body. The header is the bytes before it.
+pub const BODY_AT: usize = 0x10;
+/// The largest body that fits a packet.
+const MAX_BODY: usize = PACKET_LEN - BODY_AT;
+
 /// A fresh packet tag. 0x24a0 stamps it from `GetSystemTimeAsFileTime`; any `u32` works, the
 /// reply echoes it. This one is the Unix time in milliseconds, truncated.
 #[must_use]
@@ -35,20 +52,25 @@ pub fn new_tag() -> u32 {
 pub fn build(body: &[u8], key: u16, tag: Option<u32>) -> Result<Vec<u8>, ProtocolError> {
     let len = u16::try_from(body.len())
         .ok()
-        .filter(|&n| usize::from(n) <= PACKET_LEN - 0x10)
+        .filter(|&n| usize::from(n) <= MAX_BODY)
         .ok_or_else(|| {
             ProtocolError::Invalid(format!("body {} bytes does not fit a packet", body.len()))
         })?;
     let mut pkt = vec![0; PACKET_LEN];
-    put(&mut pkt, 0x10, body);
-    put(&mut pkt, 6, &1_u16.to_le_bytes());
-    put(&mut pkt, 8, &crc16(body).to_le_bytes());
-    put(&mut pkt, 10, &len.to_le_bytes());
-    put(&mut pkt, 12, &tag.unwrap_or_else(new_tag).to_le_bytes());
+    put(&mut pkt, BODY_AT, body);
+    put(&mut pkt, VERSION_AT, &VERSION.to_le_bytes());
+    put(&mut pkt, BODY_CRC_AT, &crc16(body).to_le_bytes());
+    put(&mut pkt, BODY_LEN_AT, &len.to_le_bytes());
+    put(&mut pkt, TAG_AT, &tag.unwrap_or_else(new_tag).to_le_bytes());
     put(&mut pkt, 0, &MAGIC);
-    let head_crc = crc16(window(&pkt, 6, 10));
-    put(&mut pkt, 4, &head_crc.to_le_bytes());
+    let head_crc = crc16(head_covered(&pkt));
+    put(&mut pkt, HEAD_CRC_AT, &head_crc.to_le_bytes());
     Ok(enc(&pkt, key))
+}
+
+/// The bytes that the header CRC covers.
+fn head_covered(pkt: &[u8]) -> &[u8] {
+    window(pkt, VERSION_AT, BODY_AT - VERSION_AT)
 }
 
 fn bad(message: impl Into<String>) -> ProtocolError {
@@ -64,20 +86,20 @@ pub fn unscramble(pkt: &[u8], key: u16) -> Result<Vec<u8>, ProtocolError> {
         return Err(bad(format!("{} bytes, need {PACKET_LEN}", pkt.len())));
     }
     let plain = enc(window(pkt, 0, PACKET_LEN), key);
-    let magic = window(&plain, 0, 4);
+    let magic = window(&plain, 0, MAGIC.len());
     if magic != MAGIC {
         return Err(bad(format!(
             "magic {} (wrong session key?)",
             hex(magic, "")
         )));
     }
-    let header_ok = u16_at(&plain, 4) == Some(crc16(window(&plain, 6, 10)));
-    if !header_ok || u16_at(&plain, 6) != Some(1) {
+    let header_ok = u16_at(&plain, HEAD_CRC_AT) == Some(crc16(head_covered(&plain)));
+    if !header_ok || u16_at(&plain, VERSION_AT) != Some(VERSION) {
         return Err(bad("header CRC or version"));
     }
-    let blen = u16_at(&plain, 10).map_or(usize::MAX, usize::from);
-    let body_ok =
-        blen <= PACKET_LEN - 0x10 && u16_at(&plain, 8) == Some(crc16(window(&plain, 0x10, blen)));
+    let blen = u16_at(&plain, BODY_LEN_AT).map_or(usize::MAX, usize::from);
+    let body_ok = blen <= MAX_BODY
+        && u16_at(&plain, BODY_CRC_AT) == Some(crc16(window(&plain, BODY_AT, blen)));
     if !body_ok {
         return Err(bad("body CRC"));
     }
@@ -90,16 +112,16 @@ pub fn unscramble(pkt: &[u8], key: u16) -> Result<Vec<u8>, ProtocolError> {
 #[must_use]
 pub fn find_key(pkt: &[u8]) -> Option<u16> {
     (0..=u16::MAX)
-        .filter(|&k| enc(window(pkt, 0, 4), k) == MAGIC)
+        .filter(|&k| enc(window(pkt, 0, MAGIC.len()), k) == MAGIC)
         .find(|&k| unscramble(pkt, k).is_ok())
 }
 
-/// The tag (`u32` at 12) of a descrambled packet.
+/// The tag of a descrambled packet.
 ///
 /// # Errors
 /// [`ProtocolError::BadPacket`] when `plain` is shorter than 16 bytes.
 pub fn tag_of(plain: &[u8]) -> Result<u32, ProtocolError> {
-    u32_at(plain, 12).ok_or_else(|| bad("packet too short for a tag"))
+    u32_at(plain, TAG_AT).ok_or_else(|| bad("packet too short for a tag"))
 }
 
 #[cfg(test)]

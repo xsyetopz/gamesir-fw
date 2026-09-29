@@ -1,4 +1,6 @@
-use super::{GIP_FLAGS, Reassembler, fragments, gip_unwrap, gip_wrap, is_ack, reply_fragment};
+use super::{
+    GIP_FLAGS, Reassembler, fragments, gip_ack, gip_unwrap, gip_wrap, is_ack, reply_fragment,
+};
 use crate::bytes::window;
 
 fn packet(mul: usize) -> Vec<u8> {
@@ -72,4 +74,13 @@ fn wrap_and_unwrap() {
     assert_eq!(reply_fragment(&reply), Some(&frag[..]), "reply fragment");
     assert_eq!(reply_fragment(payload), None, "F0 is host-to-device");
     assert_eq!(gip_unwrap(&[0x0F, 0, 0, 0x80]), None, "two-byte length");
+}
+
+#[test]
+fn ack_of_a_guide_button_message() {
+    // xpad acknowledges `07 30 05 02 ..` (guide button, needs an ack) with these bytes.
+    let want = [
+        0x01, 0x20, 0x05, 0x09, 0x00, 0x07, 0x20, 0x02, 0, 0, 0, 0, 0,
+    ];
+    assert_eq!(gip_ack(0x07, 0x30, 0x05, 0x02), want);
 }

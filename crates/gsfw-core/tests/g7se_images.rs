@@ -1,7 +1,10 @@
 //! Decoding and planning against the real G7 SE images under `private/`; skips without them.
 #![cfg(test)]
 
-use std::path::{Path, PathBuf};
+#[path = "common/fixture.rs"]
+pub mod fixture;
+
+use fixture::fixture;
 
 use gsfw_core::formats::crc16;
 use gsfw_core::formats::ufw::{Ufw, app_bin, load};
@@ -12,21 +15,8 @@ const V664_NO_KEY: &str = "firmware/Core/FirmwarePackages/G7SE/JS_SL3101_V664_No
 const V640_KEY: &str = "flash-tool/bundle/JS_SL3101_V640_Key.fw";
 const V640_NO_KEY: &str = "flash-tool/bundle/JS_SL3101_V640_No_Key.fw";
 
-fn fixture(rel: &str) -> Option<PathBuf> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../private")
-        .join(rel);
-    if path.exists() {
-        Some(path)
-    } else {
-        eprintln!("skipped: {} is missing", path.display());
-        None
-    }
-}
-
 fn entry(image: &Ufw, name: &str) -> Vec<u8> {
-    let e = image.entries.iter().find(|e| e.name == name).unwrap();
-    image.raw(e).to_vec()
+    image.raw(image.entry(name).unwrap()).to_vec()
 }
 
 fn check(image: &Ufw, count: u16, chipkey: u16) {

@@ -24,6 +24,8 @@ pub(super) enum Kind {
 }
 
 impl Kind {
+    /// Every operation, in the CLI's order.
+    #[cfg(test)]
     pub(super) const ALL: [Self; 13] = [
         Self::Catalog,
         Self::Fetch,
@@ -40,37 +42,95 @@ impl Kind {
         Self::Flash,
     ];
 
-    /// The CLI command name and what it does.
-    pub(super) const fn label(self) -> &'static str {
+    /// The operation's name in the window.
+    pub(super) const fn name(self) -> &'static str {
         match self {
-            Self::Catalog => "catalog: the firmware downloads that fetch knows",
-            Self::Fetch => "fetch: get a catalog download and write its images",
-            Self::Info => "info: entries, CRCs, chip key, flash heads",
-            Self::Extract => "extract: every entry, decrypted",
-            Self::AppBin => "app-bin: the decrypted app.bin",
-            Self::FindUsb => "find-usb: VID/PID and descriptors in the image",
-            Self::NexusExtract => "nexus-extract: .ufw images from the Nexus DLL",
-            Self::FlashToolExtract => "flash-tool-extract: .fw images from a Flash Tool .exe",
-            Self::DryRun => "dry-run: the GIP messages probe would send",
-            Self::List => "list: USB devices with VID 3537",
-            Self::Probe => "probe: handshake and query (pad, read only)",
-            Self::Crc => "crc: CRC of a flash range (pad, read only)",
-            Self::Flash => "flash: write the image (pad, writes flash)",
+            Self::Catalog => "Firmware list",
+            Self::Fetch => "Download firmware",
+            Self::NexusExtract => "From the Nexus app",
+            Self::FlashToolExtract => "From a Flash Tool",
+            Self::Flash => "Install firmware",
+            Self::List => "Find controllers",
+            Self::Probe => "Check controller",
+            Self::Crc => "Read checksum",
+            Self::Info => "File details",
+            Self::Extract => "Unpack file",
+            Self::AppBin => "Save app.bin",
+            Self::FindUsb => "Find USB IDs",
+            Self::DryRun => "Preview messages",
+        }
+    }
+
+    /// What the operation does, for the user.
+    pub(super) const fn about(self) -> &'static str {
+        match self {
+            Self::Catalog => "Shows the firmware files that this tool can download.",
+            Self::Fetch => {
+                "Downloads the firmware for your controller and checks it. The firmware files go \
+                 into the folder that you choose."
+            }
+            Self::NexusExtract => {
+                "Gets the firmware files from the GameSir Nexus app. Choose the file \
+                 HJC.GameSir.Nexus2_0.dll from the Nexus app folder."
+            }
+            Self::FlashToolExtract => {
+                "Gets the firmware files from a GameSir Flash Tool program (.exe)."
+            }
+            Self::Flash => {
+                "Installs firmware on the controller. Use this to repair a controller that does \
+                 not start. The tool first checks the file and the controller. It writes only \
+                 when you select Write firmware."
+            }
+            Self::List => "Shows the GameSir controllers that are connected by USB.",
+            Self::Probe => {
+                "Connects to the controller and reads its firmware state. The controller does \
+                 not change."
+            }
+            Self::Crc => {
+                "Reads the checksum of an area of the controller's memory. The controller does \
+                 not change."
+            }
+            Self::Info => "Shows the parts of a firmware file.",
+            Self::Extract => "Saves each part of a firmware file into a folder.",
+            Self::AppBin => "Saves the main program (app.bin) of a firmware file.",
+            Self::FindUsb => {
+                "Finds the USB IDs, and the descriptor files of a folder, in a firmware file."
+            }
+            Self::DryRun => {
+                "Shows the messages that Check controller sends. The tool sends nothing."
+            }
+        }
+    }
+
+    /// The text of the button that starts the operation.
+    pub(super) const fn action(self, write: bool) -> &'static str {
+        match self {
+            Self::Catalog => "Show list",
+            Self::Fetch => "Download",
+            Self::NexusExtract | Self::FlashToolExtract => "Get files",
+            Self::Flash if write => "Install",
+            Self::Flash => "Check only",
+            Self::List | Self::FindUsb => "Find",
+            Self::Probe => "Check",
+            Self::Crc => "Read",
+            Self::Info | Self::DryRun => "Show",
+            Self::Extract => "Unpack",
+            Self::AppBin => "Save",
         }
     }
 
     /// Labels of the two path fields; `None` when the operation does not take one.
     pub(super) const fn paths(self) -> (Option<&'static str>, Option<&'static str>) {
+        const FILE: Option<&str> = Some("Firmware file");
+        const FOLDER: Option<&str> = Some("Save to folder");
         match self {
-            Self::Info | Self::DryRun | Self::Probe | Self::Crc | Self::Flash => {
-                (Some("Image (.ufw, .fw)"), None)
-            }
-            Self::Extract => (Some("Image (.ufw, .fw)"), Some("Output directory")),
-            Self::AppBin => (Some("Image (.ufw, .fw)"), Some("Output file")),
-            Self::FindUsb => (Some("Image (.ufw, .fw)"), Some("Descriptor directory")),
-            Self::NexusExtract => (Some("HJC.GameSir.Nexus2_0.dll"), Some("Output directory")),
-            Self::FlashToolExtract => (Some("Flash Tool .exe"), Some("Output directory")),
-            Self::Fetch => (Some("Artifact (see catalog)"), Some("Output directory")),
+            Self::Info | Self::DryRun | Self::Probe | Self::Crc | Self::Flash => (FILE, None),
+            Self::Extract => (FILE, FOLDER),
+            Self::AppBin => (FILE, Some("Save as")),
+            Self::FindUsb => (FILE, Some("Descriptor folder")),
+            Self::NexusExtract => (Some("Nexus app file"), FOLDER),
+            Self::FlashToolExtract => (Some("Flash Tool"), FOLDER),
+            Self::Fetch => (Some("Firmware"), FOLDER),
             Self::List | Self::Catalog => (None, None),
         }
     }
@@ -78,6 +138,49 @@ impl Kind {
     /// Whether the operation talks to a pad through the upgrade protocol.
     pub(super) const fn pad(self) -> bool {
         matches!(self, Self::Probe | Self::Crc | Self::Flash)
+    }
+}
+
+/// A group of operations in the side panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Group {
+    Get,
+    Repair,
+    Controller,
+    Files,
+}
+
+impl Group {
+    /// The side panel's order: get firmware, install it, then the rest.
+    pub(super) const ALL: [Self; 4] = [Self::Get, Self::Repair, Self::Controller, Self::Files];
+
+    pub(super) const fn title(self) -> &'static str {
+        match self {
+            Self::Get => "Get firmware",
+            Self::Repair => "Repair",
+            Self::Controller => "Controller",
+            Self::Files => "Firmware files",
+        }
+    }
+
+    pub(super) const fn kinds(self) -> &'static [Kind] {
+        match self {
+            Self::Get => &[
+                Kind::Catalog,
+                Kind::Fetch,
+                Kind::NexusExtract,
+                Kind::FlashToolExtract,
+            ],
+            Self::Repair => &[Kind::Flash],
+            Self::Controller => &[Kind::List, Kind::Probe, Kind::Crc],
+            Self::Files => &[
+                Kind::Info,
+                Kind::Extract,
+                Kind::AppBin,
+                Kind::FindUsb,
+                Kind::DryRun,
+            ],
+        }
     }
 }
 
@@ -107,14 +210,20 @@ impl LinkFields {
     /// # Errors
     /// The message for a bad number.
     fn options(&self) -> Result<LinkOptions, String> {
-        let flags = optional(&self.flags, int_u32)?
-            .map(|flags| u8::try_from(flags).map_err(|err| format!("flags: {err}")))
-            .transpose()?;
+        let flags = optional(&self.flags, int_u32)
+            .and_then(|flags| {
+                flags
+                    .map(u8::try_from)
+                    .transpose()
+                    .map_err(|e| e.to_string())
+            })
+            .map_err(|err| format!("Message flags: {err}"))?;
         Ok(LinkOptions {
-            pid: optional(&self.pid, hex_u16)?,
+            pid: optional(&self.pid, hex_u16).map_err(|err| format!("USB product ID: {err}"))?,
             flags: flags.unwrap_or(GIP_FLAGS),
             power_on: self.power_on,
-            session_key: optional(&self.session_key, hex_u16)?,
+            session_key: optional(&self.session_key, hex_u16)
+                .map_err(|err| format!("Session key: {err}"))?,
             verbose: self.verbose,
         })
     }
@@ -138,7 +247,7 @@ pub(super) struct Form {
 impl Default for Form {
     fn default() -> Self {
         Self {
-            kind: Kind::Info,
+            kind: Kind::Fetch,
             first: String::new(),
             second: String::new(),
             addr: String::new(),
@@ -156,7 +265,7 @@ impl Default for Form {
 fn path(text: &str, label: &str) -> Result<PathBuf, String> {
     let text = text.trim();
     if text.is_empty() {
-        return Err(format!("{label} is empty"));
+        return Err(format!("Fill in {label}."));
     }
     Ok(PathBuf::from(text))
 }
@@ -245,8 +354,8 @@ impl Form {
     fn pad_op(&self) -> Result<Op, String> {
         let action = match self.kind {
             Kind::Crc => PadAction::Crc {
-                addr: int_u32(self.addr.trim()).map_err(|err| format!("address: {err}"))?,
-                len: int_u32(self.len.trim()).map_err(|err| format!("length: {err}"))?,
+                addr: int_u32(self.addr.trim()).map_err(|err| format!("Start address: {err}"))?,
+                len: int_u32(self.len.trim()).map_err(|err| format!("Length: {err}"))?,
             },
             Kind::Flash => PadAction::Flash {
                 write: self.write,

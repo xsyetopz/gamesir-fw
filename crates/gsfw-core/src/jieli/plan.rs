@@ -1,7 +1,8 @@
 //! Flash planning: 0x14a20 main sequence, 0x140c0 region write, 0x12900 erase, 0x12c10 write.
 
 use super::ProtocolError;
-use super::flash_head::{FlashHead, parse_flash_head};
+use super::commands::{BLOCK, MAX_WRITE, SECTOR};
+use super::flash_head::{ERASED, FlashHead, HEAD_LEN, parse_flash_head};
 use crate::bytes::{index, tail, window};
 
 /// EOFFSET (reply byte 0x11b) and how far it moves the device dir addresses (0x14330).
@@ -9,16 +10,17 @@ pub const EOFFSET_SHIFT: [(u8, u32); 2] = [(1, 0x1000), (0x10, 0x10000)];
 /// 32 zero bytes (`DAT_1800195c0`) written over the other bank's dir head.
 pub const KILL_LEN: usize = 0x20;
 /// Bytes per C4 write (0x12c10).
-const WRITE_CHUNK: usize = 0x100;
+const WRITE_CHUNK: usize = MAX_WRITE;
 /// The two directory entries a plan places.
 const DIR_NAMES: [&str; 2] = ["app_dir_head", "app_dir_head2"];
 
 /// The dir address shift for `eoffset`, if the DLL knows it.
 #[must_use]
 pub const fn eoffset_shift(eoffset: u8) -> Option<u32> {
+    let [(first, first_shift), (second, second_shift)] = EOFFSET_SHIFT;
     match eoffset {
-        1 => Some(EOFFSET_SHIFT[0].1),
-        0x10 => Some(EOFFSET_SHIFT[1].1),
+        e if e == first => Some(first_shift),
+        e if e == second => Some(second_shift),
         _ => None,
     }
 }
@@ -111,7 +113,7 @@ fn addr32(addr: u64) -> Result<u32, ProtocolError> {
 /// the device's, the device EOFFSET or mode is not supported, region C does not fit, or an
 /// address passes 32 bits. [`ProtocolError::BadPacket`] when `flash` is too short for a head.
 pub fn plan_flash(flash: &[u8], dev: &FlashHead) -> Result<FlashPlan, ProtocolError> {
-    let img = parse_flash_head(window(flash, 0, 0x100), 0, 0)?;
+    let img = parse_flash_head(window(flash, 0, HEAD_LEN), 0, 0)?;
     if !img.header_ok || !dev.header_ok {
         return Err(invalid("flash head CRC fails".to_owned()));
     }
@@ -152,7 +154,7 @@ pub fn plan_flash(flash: &[u8], dev: &FlashHead) -> Result<FlashPlan, ProtocolEr
             "region C {c_len:#x} at {c_addr:#x} passes {limit:#x}"
         )));
     }
-    let mut region_a = vec![0xFF; index(shift)];
+    let mut region_a = vec![ERASED; index(shift)];
     region_a.extend_from_slice(window(flash, 0, index(dh)));
     Ok(FlashPlan {
         mode: dev.mode,
@@ -181,10 +183,11 @@ pub fn erase_steps(addr: u32, length: u32, unit: u32) -> Result<Vec<(u32, u32)>,
             .checked_add(off)
             .ok_or_else(|| invalid(format!("address {addr:#x} + {off:#x} passes 32 bits")))?;
         let left = length.saturating_sub(off);
-        let size = if at.trailing_zeros() >= 16 && left >= 0x10000 {
-            0x10000
-        } else if at.trailing_zeros() >= 12 && left >= 0x1000 {
-            0x1000
+        let fits = |size: u32| at.is_multiple_of(size) && left >= size;
+        let size = if fits(BLOCK) {
+            BLOCK
+        } else if fits(SECTOR) {
+            SECTOR
         } else {
             unit
         };

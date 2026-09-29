@@ -54,7 +54,10 @@ pub fn varint(data: &[u8], at: usize) -> Result<(u32, usize), FormatError> {
 fn name_end(data: &[u8], start: usize) -> Option<usize> {
     let mut end = start.saturating_add(PREFIX.len());
     loop {
-        if !data.get(end).is_some_and(|b| (0x20..=0x7e).contains(b)) {
+        if !data
+            .get(end)
+            .is_some_and(|b| b.is_ascii_graphic() || *b == b' ')
+        {
             return None;
         }
         end = end.saturating_add(1);

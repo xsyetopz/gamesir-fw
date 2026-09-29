@@ -1,17 +1,21 @@
 //! Flash region C of an image into the bank the pad is not running (`JL_Upgrade_Gip.dll`
-//! 0x14a20, mode 1/2 with region A kept). Safety rules: `docs/architecture.md`, D5.
+//! 0x14a20, mode 1/2 with region A kept). Safety rules: `ARCHITECTURE.md`, D5.
 
 use core::time::Duration;
 use std::path::Path;
 
-use super::session::{DeviceError, Session, device_crc, request};
+use super::session::{DeviceError, REPLY_WAIT, Session, device_crc, request};
 use crate::formats::crc16;
 use crate::jieli::{
-    FlashPlan, KILL_LEN, build, c2_result, c3_erase, c4_write, erase_steps, parse_result,
+    ERASED, FlashPlan, KILL_LEN, build, c2_result, c3_erase, c4_write, erase_steps, parse_result,
     plan_flash, write_chunks,
 };
 
 const SETTLE: Duration = Duration::from_secs(1);
+/// Written chunks between two progress lines.
+const PROGRESS_EVERY: usize = 64;
+/// Attempts to write one region before the flash stops.
+pub const REGION_TRIES: u32 = 5;
 
 /// # Errors
 /// [`DeviceError::Pad`] when `data` is 4 GiB or longer.
@@ -60,7 +64,7 @@ fn erase(s: &mut Session<'_>, addr: u32, length: u32, unit: u32) -> Result<bool,
         s.link.send(&build(&c3_erase(at, size)?, s.key, None)?)?;
     }
     s.link.drain(SETTLE)?;
-    let blank = crc16(&vec![0xFF; usize::try_from(length).unwrap_or(usize::MAX)]);
+    let blank = crc16(&vec![ERASED; usize::try_from(length).unwrap_or(usize::MAX)]);
     let ok = device_crc(s, addr, length)? == blank;
     if !ok {
         (s.log)("  blank check failed");
@@ -77,7 +81,7 @@ fn write_verify(s: &mut Session<'_>, addr: u32, data: &[u8]) -> Result<bool, Dev
     let total = chunks.len();
     for (n, (at, chunk)) in (1..).zip(chunks) {
         s.link.send(&build(&c4_write(at, chunk)?, s.key, None)?)?;
-        if n % 64 == 0 || n == total {
+        if n % PROGRESS_EVERY == 0 || n == total {
             (s.log)(&format!("  wrote {n}/{total} chunks"));
         }
     }
@@ -97,10 +101,10 @@ fn write_verify(s: &mut Session<'_>, addr: u32, data: &[u8]) -> Result<bool, Dev
     Ok(got == want)
 }
 
-/// 0x140c0: erase, blank check, write, verify; the whole region up to 5 times.
+/// 0x140c0: erase, blank check, write, verify; the whole region up to [`REGION_TRIES`] times.
 ///
 /// # Errors
-/// [`DeviceError`] from the link, or after 5 failed attempts.
+/// [`DeviceError`] from the link, or after [`REGION_TRIES`] failed attempts.
 pub fn write_region(
     s: &mut Session<'_>,
     addr: u32,
@@ -108,14 +112,14 @@ pub fn write_region(
     unit: u32,
 ) -> Result<(), DeviceError> {
     let length = len32(data)?;
-    for attempt in 1..=5 {
+    for attempt in 1..=REGION_TRIES {
         (s.log)(&format!("  try {attempt}"));
         if erase(s, addr, length, unit)? && write_verify(s, addr, data)? {
             return Ok(());
         }
     }
     Err(DeviceError::Pad(format!(
-        "region at {addr:#x} failed 5 times; the running bank is untouched"
+        "region at {addr:#x} failed {REGION_TRIES} times; the running bank is untouched"
     )))
 }
 
@@ -179,7 +183,14 @@ fn commit(s: &mut Session<'_>, plan: &FlashPlan) -> Result<(), DeviceError> {
         plan.kill_addr,
         crc16(&zeros)
     ));
-    let status = parse_result(&request(s.link, &c2_result(), s.key, "C2 reply", s.log, 5)?)?;
+    let status = parse_result(&request(
+        s.link,
+        &c2_result(),
+        s.key,
+        "C2 reply",
+        s.log,
+        REPLY_WAIT,
+    )?)?;
     (s.log)(&format!("C2 status {status}"));
     if status != 0 {
         return Err(DeviceError::Pad(format!("C2 status {status}")));

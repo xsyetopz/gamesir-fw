@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use gsfw_core::ops::{LinkOptions, Op, PadAction};
 
-use super::{Form, Kind, LinkFields};
+use super::{Form, Group, Kind, LinkFields};
 
 #[test]
 fn flash_form_matches_the_cli_op() {
@@ -79,11 +79,9 @@ fn empty_paths_are_errors() {
         first: "x.fw".to_owned(),
         ..Form::default()
     };
-    assert_eq!(
-        form.op(),
-        Err("Output file is empty".to_owned()),
-        "second path"
-    );
+    let err = form.op().unwrap_err();
+    let label = Kind::AppBin.paths().1.unwrap();
+    assert!(err.contains(label), "names the empty field: {err}");
     let list = Form {
         kind: Kind::List,
         ..Form::default()
@@ -145,5 +143,21 @@ fn each_kind_gives_its_cli_op() {
             ..Form::default()
         };
         assert_eq!(form.op(), Ok(cli_op(kind)), "{kind:?}");
+    }
+}
+
+#[test]
+fn the_side_panel_lists_each_operation_once() {
+    let listed: Vec<Kind> = Group::ALL
+        .iter()
+        .flat_map(|group| group.kinds().iter().copied())
+        .collect();
+    assert_eq!(listed.len(), Kind::ALL.len(), "{listed:?}");
+    for kind in Kind::ALL {
+        assert_eq!(
+            listed.iter().filter(|&&listed| listed == kind).count(),
+            1,
+            "{kind:?}"
+        );
     }
 }

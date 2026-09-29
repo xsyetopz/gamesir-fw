@@ -1,24 +1,26 @@
 //! The shared operations against the real G7 SE 6.40 image under `private/`; skips without it.
 #![cfg(test)]
 
+#[path = "common/fixture.rs"]
+pub mod fixture;
+
+use fixture::fixture;
+
 extern crate alloc;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use gsfw_core::ops::{Op, Sink, run};
 
-fn fixture(rel: &str) -> Option<PathBuf> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../private")
-        .join(rel);
-    if path.exists() {
-        Some(path)
-    } else {
-        eprintln!("skipped: {} is missing", path.display());
-        None
+/// An empty scratch directory path for this test process; the directory itself is not made.
+fn fresh_dir(name: &str) -> PathBuf {
+    let out = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+    if out.exists() {
+        std::fs::remove_dir_all(&out).unwrap();
     }
+    out
 }
 
 fn capture(op: &Op) -> (bool, Vec<String>) {
@@ -88,10 +90,7 @@ fn flash_tool_extract_matches_the_hand_carved_files() {
     ) else {
         return;
     };
-    let out = std::env::temp_dir().join(format!("gsfw-flashtool-test-{}", std::process::id()));
-    if out.exists() {
-        std::fs::remove_dir_all(&out).unwrap();
-    }
+    let out = fresh_dir("gsfw-flashtool-test");
 
     let (ok, lines) = capture(&Op::FlashToolExtract {
         exe,
@@ -126,10 +125,7 @@ fn fetch_from_a_file_passes_the_catalog_sums() {
     ) else {
         return;
     };
-    let out = std::env::temp_dir().join(format!("gsfw-fetch-test-{}", std::process::id()));
-    if out.exists() {
-        std::fs::remove_dir_all(&out).unwrap();
-    }
+    let out = fresh_dir("gsfw-fetch-test");
 
     let (ok, lines) = capture(&Op::Fetch {
         artifact: "g7se-6.40-flash-tool".to_owned(),
@@ -165,11 +161,7 @@ fn each_downloaded_tool_passes_the_catalog_sums() {
         if !exe.exists() {
             continue;
         }
-        let out =
-            std::env::temp_dir().join(format!("gsfw-fetch-{}-{}", artifact.id, std::process::id()));
-        if out.exists() {
-            std::fs::remove_dir_all(&out).unwrap();
-        }
+        let out = fresh_dir(&format!("gsfw-fetch-{}", artifact.id));
 
         let (ok, lines) = capture(&Op::Fetch {
             artifact: artifact.id.clone(),

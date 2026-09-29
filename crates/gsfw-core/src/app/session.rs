@@ -7,9 +7,14 @@ use std::hash::RandomState;
 
 use crate::formats::ufw::Ufw;
 use crate::jieli::{
-    FlashHead, ProtocolError, STATUS_KEY_MISMATCH, TOOL_ID, build, c0_handshake, c1_query, c5_crc,
-    find_key, parse_c1, parse_crc, session_key, tag_of, unscramble,
+    FlashHead, ProtocolError, RAND_LEN, STATUS_KEY_MISMATCH, TOOL_ID, build, c0_handshake,
+    c1_query, c5_crc, find_key, parse_c1, parse_crc, session_key, tag_of, unscramble,
 };
+
+/// Seconds to wait for a reply packet.
+pub(super) const REPLY_WAIT: u32 = 5;
+/// Seconds to wait for a C5 reply.
+const CRC_WAIT: u32 = 10;
 
 /// Receives one progress line at a time.
 pub type Log<'a> = &'a mut dyn FnMut(&str);
@@ -78,7 +83,7 @@ pub struct Session<'a> {
 /// 16 bytes for C0. The DLL uses `rand()`; any 16 bytes work, so the randomly keyed standard
 /// hasher is enough.
 #[must_use]
-pub fn random16() -> [u8; 16] {
+pub fn random16() -> [u8; RAND_LEN] {
     let state = RandomState::new();
     let mut first = state.build_hasher();
     first.write_u8(1);
@@ -89,7 +94,7 @@ pub fn random16() -> [u8; 16] {
         .to_le_bytes()
         .into_iter()
         .chain(second.finish().to_le_bytes());
-    let mut out = [0; 16];
+    let mut out = [0; RAND_LEN];
     for (slot, byte) in out.iter_mut().zip(bytes) {
         *slot = byte;
     }
@@ -158,7 +163,7 @@ pub fn open_session<'a>(
     image: &'a Ufw,
     log: Log<'a>,
     session: Option<u16>,
-    host_rand: &[u8; 16],
+    host_rand: &[u8; RAND_LEN],
 ) -> Result<Session<'a>, DeviceError> {
     let chipkey = image
         .chipkey
@@ -187,10 +192,10 @@ pub fn open_session<'a>(
 fn handshake(
     link: &mut dyn GipLink,
     log: Log<'_>,
-    host_rand: &[u8; 16],
+    host_rand: &[u8; RAND_LEN],
 ) -> Result<u16, DeviceError> {
     link.send(&build(&c0_handshake(host_rand), TOOL_ID, None)?)?;
-    let reply = unscramble_any(&link.reply(5)?, TOOL_ID, "C0 reply", log)?;
+    let reply = unscramble_any(&link.reply(REPLY_WAIT)?, TOOL_ID, "C0 reply", log)?;
     let key = session_key(host_rand, &reply)?;
     log(&format!("handshake ok, session key {key:#06x}"));
     Ok(key)
@@ -206,7 +211,7 @@ fn query(
     key: u16,
     log: Log<'_>,
 ) -> Result<FlashHead, DeviceError> {
-    let plain = request(link, &c1_query(chipkey), key, "C1 reply", log, 5)?;
+    let plain = request(link, &c1_query(chipkey), key, "C1 reply", log, REPLY_WAIT)?;
     let (status, head) = parse_c1(&plain)?;
     if status.code == STATUS_KEY_MISMATCH {
         return Err(DeviceError::Pad(
@@ -239,7 +244,14 @@ fn query(
 /// # Errors
 /// [`DeviceError`] from the link, or a non-zero C5 status.
 pub fn device_crc(s: &mut Session<'_>, addr: u32, length: u32) -> Result<u16, DeviceError> {
-    let plain = request(s.link, &c5_crc(addr, length), s.key, "C5 reply", s.log, 10)?;
+    let plain = request(
+        s.link,
+        &c5_crc(addr, length),
+        s.key,
+        "C5 reply",
+        s.log,
+        CRC_WAIT,
+    )?;
     let (status, crc) = parse_crc(&plain)?;
     if status != 0 {
         return Err(DeviceError::Pad(format!(

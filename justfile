@@ -4,25 +4,34 @@ set minimum-version := "1.29.0"
 default:
     @just --list
 
-# Install the pinned Rust toolchain.
+# Install the Rust toolchain that rust-toolchain.toml pins.
 [group('check')]
 setup:
-    python3 tools/check.py setup-rust
+    rustup toolchain install
 
 # Format the workspace.
 [group('check')]
 fmt:
     cargo fmt --all
 
-# Run the fast lane during edits (not acceptance).
+# Run clippy on the code and on the tests. The tests use the clippy.toml in .clippy-test.
 [group('check')]
-quick:
-    python3 tools/check.py quick
+lint:
+    cargo clippy --locked --workspace --no-default-features
+    CLIPPY_CONF_DIR=.clippy-test cargo clippy --all-targets --locked --workspace --no-default-features
 
-# Run the full gate (needs cargo-deny on PATH).
+# Run the checks that do not need cargo-deny: format, clippy, tests, docs, release build.
 [group('check')]
-check: fmt
-    python3 tools/check.py
+host: lint
+    cargo fmt --all -- --check
+    cargo test --locked --workspace --no-default-features
+    cargo doc --no-deps --locked --workspace --no-default-features
+    cargo build --release --locked --workspace --no-default-features
+
+# Format, then run all checks (needs cargo-deny 0.20.2 on PATH).
+[group('check')]
+check: fmt host no-firmware
+    cargo deny --locked --workspace --no-default-features check --deny warnings
 
 # Check that the tree holds no firmware image and no file over 1 MB.
 [group('check')]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail when a file that git would commit is a firmware image or is larger than 1 MB.
 
-The tool repository must not contain GameSir firmware (docs/architecture.md, Q4). The check
+The tool repository must not contain GameSir firmware (ARCHITECTURE.md, Q4). The check
 reads the files that git tracks and the files that git does not ignore.
 """
 

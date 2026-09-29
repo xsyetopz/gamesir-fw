@@ -1,4 +1,4 @@
-name: rust-policy
+name: check
 
 on:
   push:
@@ -27,11 +27,17 @@ jobs:
           components: clippy,rustfmt
       # Q4: no firmware image and no file over 1 MB in the repository.
       - run: python tools/check_no_firmware.py
-      # The dependency checks do not depend on the OS, so only Linux installs cargo-deny and
-      # runs the full gate. macOS and Windows run the host lane: clippy, tests, docs, build.
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --workspace --no-default-features
+      # The tests use the clippy.toml in .clippy-test.
+      - run: cargo clippy --all-targets --locked --workspace --no-default-features
+        env:
+          CLIPPY_CONF_DIR: .clippy-test
+      - run: cargo test --locked --workspace --no-default-features
+      - run: cargo doc --no-deps --locked --workspace --no-default-features
+      - run: cargo build --release --locked --workspace --no-default-features
+      # The dependency checks do not depend on the OS, so only Linux runs cargo-deny.
       - if: runner.os == 'Linux'
-        run: rustup run 1.98.1 cargo install cargo-deny --locked --version 0.20.2
+        run: cargo install cargo-deny --locked --version 0.20.2
       - if: runner.os == 'Linux'
-        run: python tools/check.py
-      - if: runner.os != 'Linux'
-        run: python tools/check.py host
+        run: cargo deny --locked --workspace --no-default-features check --deny warnings
