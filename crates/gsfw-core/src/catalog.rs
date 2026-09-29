@@ -87,18 +87,7 @@ fn artifact(value: &Value) -> Result<Artifact, FormatError> {
     if file.is_empty() || file == "." || file == ".." || file.contains(['/', '\\', ':']) {
         return Err(invalid(&format!("{id}: `file` is not a plain file name")));
     }
-    let images = value
-        .get("images")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid(&format!("{id}: no `images` list")))?
-        .iter()
-        .map(|image| {
-            Ok(Image {
-                path: text(image, "path", &id)?,
-                sha256: sha256(image, &id)?,
-            })
-        })
-        .collect::<Result<_, FormatError>>()?;
+    let images = images(value, &id)?;
     Ok(Artifact {
         model: text(value, "model", &id)?,
         version: text(value, "version", &id)?,
@@ -113,6 +102,26 @@ fn artifact(value: &Value) -> Result<Artifact, FormatError> {
         file,
         id,
     })
+}
+
+/// The `images` list of the artifact `id`. A separate function: it keeps the frame of
+/// [`artifact`] under the stack limit on Windows.
+///
+/// # Errors
+/// [`FormatError::Invalid`] when the list or an image field is missing or bad.
+fn images(value: &Value, id: &str) -> Result<Vec<Image>, FormatError> {
+    value
+        .get("images")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid(&format!("{id}: no `images` list")))?
+        .iter()
+        .map(|image| {
+            Ok(Image {
+                path: text(image, "path", id)?,
+                sha256: sha256(image, id)?,
+            })
+        })
+        .collect()
 }
 
 /// # Errors

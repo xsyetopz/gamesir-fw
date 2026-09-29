@@ -158,6 +158,21 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     if positional.len() != names.len() {
         return Err(format!("usage: gsfw {name} {}", names.join(" ")));
     }
+    build(name, &positional, &link, flags, from)
+}
+
+/// The operation for the command `name` and its checked arguments. A separate function: it keeps
+/// the frame of [`parse`] under the stack limit on Windows.
+///
+/// # Errors
+/// The message for a bad number in the `crc` arguments.
+fn build(
+    name: &str,
+    positional: &[String],
+    link: &LinkOptions,
+    flags: &[(&str, bool)],
+    from: Option<PathBuf>,
+) -> Result<Parsed, String> {
     let path = |i: usize| positional.get(i).map(PathBuf::from).unwrap_or_default();
     let flag = |f: &str| flags.iter().any(|&(name, set)| name == f && set);
     let pad = |action| Op::Pad {
@@ -165,7 +180,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         action,
         link: link.clone(),
     };
-    let op = match name.as_str() {
+    let op = match name {
         "info" => Op::Info { image: path(0) },
         "dry-run" => Op::DryRun { image: path(0) },
         "extract" => Op::Extract {

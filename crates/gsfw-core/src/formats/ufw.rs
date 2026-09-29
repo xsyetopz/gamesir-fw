@@ -591,20 +591,28 @@ pub fn find_usb(image: &Path, descdir: &Path) -> Result<UsbMatches, FormatError>
             find(&data, &[v0, v1, p0, p1]).map(|at| (pid, at))
         })
         .collect();
-    let mut files = fs::read_dir(descdir)
-        .map_err(|e| FormatError::io(descdir, e))?
-        .map(|d| d.map(|d| d.path()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| FormatError::io(descdir, e))?;
-    files.sort();
     let mut descriptors = Vec::new();
-    for file in files.iter().filter(|f| f.is_file()) {
+    for file in sorted_files(descdir)?.iter().filter(|f| f.is_file()) {
         let bytes = fs::read(file).map_err(|e| FormatError::io(file, e))?;
         if let Some(at) = find(&data, &bytes) {
             descriptors.push((file_name(file), at));
         }
     }
     Ok(UsbMatches { ids, descriptors })
+}
+
+/// The paths in `dir`, sorted. On Windows, `ReadDir` makes the stack frame too large, so it is
+/// boxed, and kept out of [`find_usb`].
+///
+/// # Errors
+/// [`FormatError::Io`] when the directory cannot be read.
+fn sorted_files(dir: &Path) -> Result<Vec<PathBuf>, FormatError> {
+    let mut files = Box::new(fs::read_dir(dir).map_err(|e| FormatError::io(dir, e))?)
+        .map(|d| d.map(|d| d.path()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| FormatError::io(dir, e))?;
+    files.sort();
+    Ok(files)
 }
 
 #[cfg(test)]
