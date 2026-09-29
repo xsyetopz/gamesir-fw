@@ -16,7 +16,44 @@ source (a file offset, a capture frame or a probe output). Mark guesses as guess
 - Do not open or copy `.sys` files. Do not copy the Nexus WebView2 profile (cookies, history).
 - Standalone Swift probes build with
   `env -u TOOLCHAINS DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer xcrun swiftc -O x.swift -o x`.
-- Python tools: stdlib first; `uv run` with PEP 723 headers when a dependency is needed.
+- The tool is the Rust workspace in `crates/` (`gsfw-core`, the `gsfw` CLI, the `gsfw-gui`
+  window). `python3 tools/check.py` is the gate; it must pass. All lints are `forbid`: fix the
+  code, never add `#[allow]`. `lib.rs`, `main.rs` and `mod.rs` hold only declarations; unit tests
+  go in `<module>/tests.rs`. A new operation goes into `gsfw_core::ops` so the CLI and the GUI
+  offer it both.
+- Code comments, doc comments, and user-facing docs (`README.md`, `docs/`) follow ASD-STE100.
+- `CLAUDE.md` and `GEMINI.md` are symlinks to this file. Edit `AGENTS.md`.
+
+## Commands
+
+Run from the repository root. `tools/check.py` selects the pinned toolchain (1.98.1) itself.
+The full gate also needs `cargo-deny` 0.20.2 on `PATH`.
+
+| Command | What |
+| --- | --- |
+| `python3 tools/check.py setup-rust` | Install the pinned toolchain. |
+| `cargo fmt --all` | Format. The gate fails on a format diff. |
+| `python3 tools/check.py quick` | Fast lane during edits. Not acceptance. |
+| `python3 tools/check.py` | Full gate: policy, clippy (also the test lane), tests, docs, build, cargo-deny. |
+| `python3 tools/check_no_firmware.py` | No firmware image and no file over 1 MB in the tree (CI runs it). |
+| `cargo run -p gsfw -- --help` | CLI commands. `list`, `probe`, `crc` and `flash` touch a pad. |
+| `cargo run -p gsfw-gui` | The window. |
+
+The `justfile` wraps these commands (`just --list`). `just check` formats, then runs the full gate.
+
+Done means `cargo fmt --all` and `python3 tools/check.py` pass. CI (`.github/workflows/check.yml`)
+runs the full gate on Linux and the `host` lane on macOS and Windows.
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `crates/gsfw-core/src/formats/` | UFW, `.fw`, Nexus DLL and Flash Tool decoders. |
+| `crates/gsfw-core/src/jieli/`, `src/usb.rs` | GIP upgrade protocol, and its nusb link. |
+| `crates/gsfw-core/src/app/`, `src/ops` | Use cases (fetch, session, flash) and the operations the CLI and GUI share. |
+| `crates/gsfw-core/catalog/catalog.json` | Downloads that `fetch` knows, with SHA-256 sums. No firmware bytes. |
+| `docs/` | User-facing docs (architecture, GIP protocol). |
+| `notes/` | Research notes. `facts.md` holds verified facts. |
 
 ## `private/` layout
 
@@ -28,38 +65,33 @@ source (a file offset, a capture frame or a probe output). Mark guesses as guess
 | `nexus-app/D4XGaming.Devices.dll` / `.winmd` | GIP device access layer. |
 | `nexus-app/Web/js/app.*.js` | Vue UI (3.2 MB, minified). Talks to native code over `chrome.webview.postMessage({action, payload})`. |
 | `nexus-localstate/` | Nexus log from the 2026-09-26 update session, plus `Settings/`. |
-| `firmware/Core/FirmwarePackages/<Model>/*.ufw` | 33 images carved by `tools/extract_nexus_resources.py`. |
+| `firmware/Core/FirmwarePackages/<Model>/*.ufw` | 33 images carved by `gsfw nexus-extract`. |
 | `firmware/Core/Devices/Unsupported/unsupported_devices.json` | Nexus's list of unsupported devices and PIDs. |
 | `descriptors/` | G7 SE HID report descriptors (1082 if0 and if1, 1010 if0) and the 1082 configuration descriptor, binary. |
 | `captures/` | Windows USB capture of the G7 SE without Nexus (`pcap.py` parses it), plus macOS G7 SE input traces (`g7*.raw`, `g7*.log`). |
 | `reference/` | Copies of g7ctl's G7 Pro protocol notes and code, the GLT research notes, and gamesir-wiki's controller table. |
 | `probes/` | macOS IOUSBHost/IOHID probes used on the G7 SE (read the source before running). |
 
-Rebuild `firmware/` with `python3 tools/extract_nexus_resources.py`.
+Rebuild `firmware/` with `cargo run -p gsfw -- nexus-extract private/nexus-app/HJC.GameSir.Nexus2_0.dll private/firmware`.
 
 ## Open tasks, most useful first
 
-1. **Nexus command builders.** The UI sends `setConfig`, `saveProfile` and `commonReq` JSON (see
-   the UI bundle). Native code turns it into GIP message 0x0F vendor commands. Find, for the
-   G7 SE: the LED on/off (0D), status (E0), profile read/write (04/05, 0B/0C, 07) and the
-   APP-mode switch (to PID 1010). Output: the exact byte layouts. Lead: the .NET Native DLL keeps
-   strings and type names; search near the command-name strings, then follow the xrefs in
-   Ghidra (x64, PE).
-2. **Mode switching on macOS.** The pad enumerates as 1082 (HID) with a vendor interface 1
-   (reports 0x0F out, 0x10/0x12 in) that did not answer G7 Pro framing. Find in firmware or
-   Nexus what 1082's interface 1 accepts, and how the pad enters XInput 1022 / APP 1010.
-3. **UFW container.** Parse the cleartext JieLi header (`PB01_00_0`, `UPDATE_JUMP`, file table)
-   of `G7SE/JS_SL3101_V664_*.ufw`. Map the sections and their lengths and CRCs. Search for public
-   JieLi AC69xx firmware tooling that documents the format and the CRC16-keyed cipher (none
-   checked yet). Verify any tool claim against these files.
-4. **Decrypt.** The bodies are ciphertext (entropy about 8.0 bits/byte). Key and No_Key differ
-   after 0x1E27. Try the known JieLi cipher (CRC16-based keystream, keyed by chip key or none).
-   `No_Key` is the likeliest to open with a fixed or zero key. `JL_Upgrade_Gip.dll` exports
-   `JL_getFirmwareDataCRC`, `JL_getFirmwareOrigCRC`, `JL_getFirmwarePidVid`,
-   `JL_loadFirmwareData` and `JL_upgradeDevice*`; reverse `JL_loadFirmwareData` and the
-   "firmware KEY does not match the device KEY" check to learn how it reads the header and key.
-5. **Firmware handlers.** Once plaintext exists: find the USB descriptors (PID 1082, 1022, 1010),
-   the interface-1 report handler, the LED driver and the combo-button table. The AC695X CPU is
-   believed to be JieLi's own ISA (unverified), so find a Ghidra or IDA processor module first.
-6. **Nexus log.** `nexus-localstate/.../Log - 20260926.log` records a full G7 SE update (PID 1010,
-   `SingleUBoot`, `Key` variant). Extract the command and response sequence if it is logged.
+Done (see the notes): Nexus command layouts for the G7 SE (`notes/protocol-g7se.md`); the UFW
+container, cipher and chip keys (`crates/gsfw-core/src/formats/ufw.rs`, `notes/facts.md` "UFW
+decryption"); the data-only firmware map (`notes/firmware-g7se.md`); the Nexus log sequence
+(`notes/facts.md`); the G7 SE recovery by flash (`docs/jieli-gip-protocol.md`).
+
+1. **Talk to the vendor collection on macOS.** Output report 0x0F gets no reply on 0x10/0x12,
+   either with g7ctl framing or with the bare Nexus payload (`0f 09`, T12, pad in 1010). Blocks
+   profile read/write (T13, T14, T17). Leads: the 1010 feature reports 3 and 0xE0 (a GET stalls);
+   a Windows USBPcap capture of Nexus reading a profile, to see the wire framing; raw EP 0x02
+   writes, which need the interface taken from Apple's HID driver (DriverKit or Linux).
+2. **Mode switch without the combo (T15, T16).** No interface-1 command was found in the
+   firmware data. The Nexus route is the XInput rumble spelling `gamesirapp`; on 1082 the
+   only rumble-like output is if0 report 5 (4 bytes). T15 sent the pattern in both byte orders
+   through the HID API with A pressed, and the motors never buzzed, so report 5 does not reach
+   the motors that way. The firmware decoder may listen only in XInput mode (10A0), which
+   macOS does not trigger. Needs an XInput host (Windows or Linux `xpad`).
+3. **Disassemble the firmware.** T9: pi32v2, pi32 and q32s all fail the 256-instruction check
+   (`notes/jieli-tooling.md`). A correct AC695X module would unlock the command dispatch,
+   combo table and LED driver (anchors in `notes/firmware-g7se.md`).
