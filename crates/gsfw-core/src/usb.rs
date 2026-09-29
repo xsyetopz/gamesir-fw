@@ -37,13 +37,24 @@ fn usb(what: &str, err: impl core::fmt::Display) -> DeviceError {
     DeviceError::Pad(format!("USB {what}: {err}"))
 }
 
+/// The USB devices, collected: the Linux iterator is larger than the stack frame limit.
+///
+/// # Errors
+/// [`DeviceError::Pad`] when the USB devices cannot be listed.
+fn devices() -> Result<Vec<nusb::DeviceInfo>, DeviceError> {
+    Ok(nusb::list_devices()
+        .wait()
+        .map_err(|e| usb("list", e))?
+        .collect())
+}
+
 /// One line per device with [`VID`] and one per interface, GIP interfaces marked.
 ///
 /// # Errors
 /// [`DeviceError::Pad`] when the USB devices cannot be listed.
 pub fn list_devices() -> Result<Vec<String>, DeviceError> {
     let mut lines = Vec::new();
-    for info in nusb::list_devices().wait().map_err(|e| usb("list", e))? {
+    for info in devices()? {
         if info.vendor_id() != VID {
             continue;
         }
@@ -137,7 +148,7 @@ fn configure(device: &Device) -> Result<(), DeviceError> {
 /// [`DeviceError::Pad`] when no device has one.
 fn find_gip(pid: Option<u16>) -> Result<(Device, u8, u8, u8), DeviceError> {
     let mut seen = Vec::new();
-    for info in nusb::list_devices().wait().map_err(|e| usb("list", e))? {
+    for info in devices()? {
         if info.vendor_id() != VID || pid.is_some_and(|p| p != info.product_id()) {
             continue;
         }
